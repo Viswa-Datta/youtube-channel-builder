@@ -169,6 +169,7 @@ def search_scene(need: dict) -> list[Candidate]:
     """Search in priority order for one footage need. Never returns made-up items."""
     q = need["search_query"]
     res: list[Candidate] = []
+    from .discovery import is_graphic
     try:
         if need["tier"] == "real":
             res += internet_archive(q) + library_of_congress(q) + nara(q)
@@ -182,4 +183,4 @@ def search_scene(need: dict) -> list[Candidate]:
     except requests.RequestException as e:  # network/API trouble: report, do not invent
         res = []
         need.setdefault("errors", []).append(str(e))
-    return res
+    return [c for c in res if not is_graphic(c.title)]

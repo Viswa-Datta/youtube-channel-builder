@@ -10,6 +10,7 @@ Everything here comes from a live API response; nothing is synthesised. Three ou
 """
 from __future__ import annotations
 
+import html
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -25,6 +26,14 @@ AGENCY_RE = re.compile(r"\b(police|sheriff|[a-z]{0,4}pd|department|dept|county|c
                        r"doj|department of justice)\b", re.I)
 FOOTAGE_RE = re.compile(r"body[\s-]?cam|bodycam|body[\s-]?worn|dash[\s-]?cam|critical incident|surveillance|"
                         r"interrogation|interview|911|press conference|court|trial|sentencing|hearing", re.I)
+
+
+GRAPHIC_RE = re.compile(r"autops|corpse|dead body|bodies|cadaver|gore|graphic|morgue|crime scene photo|injur|wound|blood", re.I)
+
+
+def is_graphic(title: str) -> bool:
+    """Never offer autopsy, injury or body images/videos as footage (they are also excluded from thumbnails)."""
+    return bool(GRAPHIC_RE.search(title or ""))
 
 
 @dataclass
@@ -159,7 +168,7 @@ def youtube(query: str, n: int = 8, agency: str | None = None) -> list[Evidence]
     LAST_ERRORS.pop("youtube", None)
     out = []
     for it in r.json().get("items", []):
-        sn = it.get("snippet", {})
+        sn = {k: (html.unescape(v) if isinstance(v, str) else v) for k, v in it.get("snippet", {}).items()}
         vid = it.get("id", {}).get("videoId")
         if not vid:
             continue
@@ -185,6 +194,8 @@ def wikimedia_commons(query: str, n: int = 8, media: str = "video") -> list[Evid
     out = []
     pages = (r.json().get("query", {}).get("pages", {}) if r else {}).values()
     for p in pages:
+        if is_graphic(p.get("title", "")):
+            continue
         ii = (p.get("imageinfo") or [{}])[0]
         md = ii.get("extmetadata", {})
         lic_short = (md.get("LicenseShortName", {}) or {}).get("value", "")
@@ -246,6 +257,7 @@ def probe_case(case_name: str, location: str | None, agency: str | None, search_
     def relevant(e: Evidence) -> bool:  # every distinctive word of a 1-2 word name, at least 2 of a longer one
         return len(name_words & _words(e.title + " " + (e.meta.get("snippet") or ""))) >= need
 
+    yt = [e for e in yt if not is_graphic(e.title)]
     official_video = [e for e in yt if e.official and relevant(e) and FOOTAGE_RE.search(e.title)]
     other_yt = [e for e in yt if relevant(e) and e not in official_video][:3]
     archive = [e for e in ia if relevant(e) and e.license != "Do Not Use"]
