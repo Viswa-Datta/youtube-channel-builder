@@ -61,6 +61,8 @@ def _anthropic(model: str, system: str, user: str, schema: dict, name: str) -> t
 
 def _gemini(model: str, system: str, user: str, schema: dict, name: str) -> tuple[str, int, int]:
     require("gemini")
+    import os
+    model = os.environ.get("GEMINI_MODEL") or model  # Google retires models often; override without a code change
     prompt = f"{user}\n\nReturn ONLY JSON that validates against this JSON Schema:\n{json.dumps(schema)}"
     r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                       params={"key": settings.gemini_api_key}, timeout=300,
@@ -149,3 +151,32 @@ def _log(agent, provider, model, tin, tout, started, user_id, idem, project_id, 
                   cost_usd=cost, duration_ms=ms, idempotency_key=idem + ("" if ok else ":invalid"),
                   meta={"valid": ok})
     return Usage(provider, model, tin, tout, ms)
+
+
+def check_llm() -> dict:
+    """Tiny live call to each configured LLM provider: proves the key works before real jobs run (costs ~nothing)."""
+    import os
+    from pydantic import BaseModel as _BM
+    out: dict = {}
+
+    class Ping(_BM):
+        ok: bool
+        word: str
+
+    if settings.gemini_api_key:
+        r = requests.get("https://generativelanguage.googleapis.com/v1beta/models", params={"key": settings.gemini_api_key, "pageSize": 200}, timeout=30)
+        names = [m["name"].split("/", 1)[1] for m in r.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])] if r.ok else []
+        model = os.environ.get("GEMINI_MODEL") or "gemini-3.1-flash-lite"
+        res = {"key_valid": r.ok, "model": model, "model_available": model in names,
+               "flash_models_available": [n for n in names if "flash" in n][:15]}
+        if r.ok and model in names:
+            try:
+                txt, tin, tout = _gemini(model, "Reply with JSON only.", 'Return {"ok": true, "word": "ready"}', Ping.model_json_schema(), "Ping")
+                res["test_call"] = Ping.model_validate_json(_strip_fences(txt)).model_dump()
+            except Exception as e:  # noqa: BLE001
+                res["test_call_error"] = str(e)[:300]
+        out["gemini"] = res
+    if settings.openai_api_key:
+        r = requests.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {settings.openai_api_key}"}, timeout=30)
+        out["openai"] = {"key_valid": r.ok}
+    return out

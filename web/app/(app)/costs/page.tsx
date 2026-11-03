@@ -50,7 +50,7 @@ export default async function Costs() {
           <table className="w-full min-w-[640px] text-sm">
             <thead className="text-left text-xs text-muted-foreground"><tr><th className="py-1">Step</th><th>Free path</th><th>Paid options</th></tr></thead>
             <tbody>
-              <tr className="border-t align-top"><td className="py-2">Agents (LLM)</td><td>{pricing.llm["gemini:gemini-2.5-flash"].label}; or {pricing.llm["ollama:llama3.1:8b"].label}</td>
+              <tr className="border-t align-top"><td className="py-2">Agents (LLM)</td><td>{pricing.llm["gemini:gemini-3.1-flash-lite"].label}; or {pricing.llm["ollama:llama3.1:8b"].label}</td>
                 <td>{Object.entries(pricing.llm).filter(([, m]) => (m as { paid: boolean }).paid).map(([k, m]) => <div key={k}>{(m as { label: string }).label}: ${(m as { in_per_m: number }).in_per_m}/${(m as { out_per_m: number }).out_per_m} per 1M tokens</div>)}</td></tr>
               <tr className="border-t align-top"><td className="py-2">Voice</td><td>{pricing.tts["kokoro:am_michael"].label}</td>
                 <td>{Object.entries(pricing.tts).filter(([, v]) => (v as { paid: boolean }).paid).map(([k, v]) => <div key={k}>{(v as { label: string }).label}: ${(v as { per_m_chars: number }).per_m_chars}/1M chars <span className="text-xs text-muted-foreground">({(v as { commercial_rights: string }).commercial_rights})</span></div>)}</td></tr>

@@ -12,7 +12,7 @@ to list what is missing.
 | `TOKEN_ENCRYPTION_KEY` | Encrypting YouTube tokens | — | `openssl rand -base64 32`, same in web and worker |
 | `OPENAI_API_KEY` | Standard-tier agents (gpt-4o-mini), OpenAI voices | Gemini free tier / Ollama | platform.openai.com → API keys |
 | `ANTHROPIC_API_KEY` | Optional agent provider | — | console.anthropic.com |
-| `GEMINI_API_KEY` | Free-tier agents (Gemini 2.5 Flash) | yes (rate-limited) | aistudio.google.com → Get API key |
+| `GEMINI_API_KEY` | Free-tier agents (Gemini 3.1 Flash-Lite (set GEMINI_MODEL to change)) | yes (rate-limited) | aistudio.google.com → Get API key |
 | `OLLAMA_URL` | Self-hosted free agents | yes | ollama.com, run `ollama pull llama3.1:8b` |
 | `ELEVENLABS_API_KEY` | Premium voice | Kokoro | elevenlabs.io → Profile → API key (commercial use needs a paid plan) |
 | `GOOGLE_TTS_API_KEY` | Chirp 3 HD voice | Kokoro (1M chars/month free on Google too) | Cloud console → enable Text-to-Speech API → Credentials → API key (restrict it to that API) |

@@ -122,6 +122,9 @@ if __name__ == "__main__":
         print(json.dumps(pricing.estimate(sys.argv[2], sys.argv[3], int(sys.argv[4])), indent=2))
     elif cmd == "check-env":
         print(json.dumps(check_env(), indent=2))
+    elif cmd == "check-llm":
+        from .providers.llm import check_llm
+        print(json.dumps(check_llm(), indent=2))
     elif cmd == "once":
         while run_one():
             pass

@@ -5,52 +5,193 @@
   "chars_per_word": 6.0,
   "tokens_per_word": 1.35,
   "llm": {
-    "openai:gpt-4o-mini": { "label": "OpenAI GPT-4o mini", "in_per_m": 0.15, "out_per_m": 0.60, "paid": true, "source": "https://openai.com/api/pricing" },
-    "openai:gpt-4o": { "label": "OpenAI GPT-4o (polish)", "in_per_m": 2.50, "out_per_m": 10.00, "paid": true, "source": "https://openai.com/api/pricing" },
-    "anthropic:claude-haiku-4-5": { "label": "Anthropic Claude Haiku 4.5", "in_per_m": 1.00, "out_per_m": 5.00, "paid": true, "source": "https://www.anthropic.com/pricing" },
-    "gemini:gemini-2.5-flash": { "label": "Google Gemini 2.5 Flash (free tier)", "in_per_m": 0.0, "out_per_m": 0.0, "paid": false, "note": "Free tier is rate-limited and Google may use free-tier prompts to improve products; paid tier is billed separately.", "source": "https://ai.google.dev/pricing" },
-    "ollama:llama3.1:8b": { "label": "Ollama (self-hosted, free)", "in_per_m": 0.0, "out_per_m": 0.0, "paid": false, "note": "Runs on your own machine/VPS." },
-    "fixture:fixture": { "label": "Fixture (tests only, no generation)", "in_per_m": 0.0, "out_per_m": 0.0, "paid": false, "test_only": true }
+    "gemini:gemini-3.1-flash-lite": {
+      "label": "Google Gemini 3.1 Flash-Lite (free tier)",
+      "in_per_m": 0.0,
+      "out_per_m": 0.0,
+      "paid": false,
+      "note": "Free tier is rate-limited and Google may use free-tier prompts to improve products. Override the model with GEMINI_MODEL if Google retires it.",
+      "source": "https://ai.google.dev/pricing"
+    },
+    "openai:gpt-4o-mini": {
+      "label": "OpenAI GPT-4o mini",
+      "in_per_m": 0.15,
+      "out_per_m": 0.6,
+      "paid": true,
+      "source": "https://openai.com/api/pricing"
+    },
+    "openai:gpt-4o": {
+      "label": "OpenAI GPT-4o (polish)",
+      "in_per_m": 2.5,
+      "out_per_m": 10.0,
+      "paid": true,
+      "source": "https://openai.com/api/pricing"
+    },
+    "anthropic:claude-haiku-4-5": {
+      "label": "Anthropic Claude Haiku 4.5",
+      "in_per_m": 1.0,
+      "out_per_m": 5.0,
+      "paid": true,
+      "source": "https://www.anthropic.com/pricing"
+    },
+    "ollama:llama3.1:8b": {
+      "label": "Ollama (self-hosted, free)",
+      "in_per_m": 0.0,
+      "out_per_m": 0.0,
+      "paid": false,
+      "note": "Runs on your own machine/VPS."
+    },
+    "fixture:fixture": {
+      "label": "Fixture (tests only, no generation)",
+      "in_per_m": 0.0,
+      "out_per_m": 0.0,
+      "paid": false,
+      "test_only": true
+    }
   },
   "tts": {
-    "kokoro:am_michael": { "label": "Kokoro 82M (self-hosted, free)", "per_m_chars": 0.0, "paid": false, "commercial_rights": "Apache-2.0 model weights; commercial use allowed", "source": "https://github.com/hexgrad/kokoro" },
-    "openai:tts-1": { "label": "OpenAI tts-1", "per_m_chars": 15.0, "paid": true, "commercial_rights": "You own output per OpenAI terms; must disclose AI voice to listeners", "source": "https://openai.com/api/pricing" },
-    "openai:tts-1-hd": { "label": "OpenAI tts-1-hd", "per_m_chars": 30.0, "paid": true, "commercial_rights": "You own output per OpenAI terms; must disclose AI voice to listeners", "source": "https://openai.com/api/pricing" },
-    "google:chirp3-hd": { "label": "Google Chirp 3 HD", "per_m_chars": 30.0, "paid": true, "free_chars_per_month": 1000000, "commercial_rights": "Commercial use allowed under Google Cloud terms", "source": "https://cloud.google.com/text-to-speech/pricing" },
-    "elevenlabs:eleven_multilingual_v2": { "label": "ElevenLabs Multilingual v2", "per_m_chars": 100.0, "paid": true, "commercial_rights": "Commercial use requires a paid ElevenLabs plan (Starter or above)", "source": "https://elevenlabs.io/pricing/api" },
-    "elevenlabs:eleven_flash_v2_5": { "label": "ElevenLabs Flash v2.5", "per_m_chars": 50.0, "paid": true, "commercial_rights": "Commercial use requires a paid ElevenLabs plan (Starter or above)", "source": "https://elevenlabs.io/pricing/api" }
+    "kokoro:am_michael": {
+      "label": "Kokoro 82M (self-hosted, free)",
+      "per_m_chars": 0.0,
+      "paid": false,
+      "commercial_rights": "Apache-2.0 model weights; commercial use allowed",
+      "source": "https://github.com/hexgrad/kokoro"
+    },
+    "openai:tts-1": {
+      "label": "OpenAI tts-1",
+      "per_m_chars": 15.0,
+      "paid": true,
+      "commercial_rights": "You own output per OpenAI terms; must disclose AI voice to listeners",
+      "source": "https://openai.com/api/pricing"
+    },
+    "openai:tts-1-hd": {
+      "label": "OpenAI tts-1-hd",
+      "per_m_chars": 30.0,
+      "paid": true,
+      "commercial_rights": "You own output per OpenAI terms; must disclose AI voice to listeners",
+      "source": "https://openai.com/api/pricing"
+    },
+    "google:chirp3-hd": {
+      "label": "Google Chirp 3 HD",
+      "per_m_chars": 30.0,
+      "paid": true,
+      "free_chars_per_month": 1000000,
+      "commercial_rights": "Commercial use allowed under Google Cloud terms",
+      "source": "https://cloud.google.com/text-to-speech/pricing"
+    },
+    "elevenlabs:eleven_multilingual_v2": {
+      "label": "ElevenLabs Multilingual v2",
+      "per_m_chars": 100.0,
+      "paid": true,
+      "commercial_rights": "Commercial use requires a paid ElevenLabs plan (Starter or above)",
+      "source": "https://elevenlabs.io/pricing/api"
+    },
+    "elevenlabs:eleven_flash_v2_5": {
+      "label": "ElevenLabs Flash v2.5",
+      "per_m_chars": 50.0,
+      "paid": true,
+      "commercial_rights": "Commercial use requires a paid ElevenLabs plan (Starter or above)",
+      "source": "https://elevenlabs.io/pricing/api"
+    }
   },
   "footage": {
-    "pexels": { "label": "Pexels API (generic B-roll)", "per_request": 0.0, "paid": false },
-    "pixabay": { "label": "Pixabay API (generic B-roll)", "per_request": 0.0, "paid": false },
-    "archive": { "label": "Internet Archive / Library of Congress / NARA search", "per_request": 0.0, "paid": false }
+    "pexels": {
+      "label": "Pexels API (generic B-roll)",
+      "per_request": 0.0,
+      "paid": false
+    },
+    "pixabay": {
+      "label": "Pixabay API (generic B-roll)",
+      "per_request": 0.0,
+      "paid": false
+    },
+    "archive": {
+      "label": "Internet Archive / Library of Congress / NARA search",
+      "per_request": 0.0,
+      "paid": false
+    }
   },
   "compute": {
-    "self_hosted": { "label": "Render on your own machine/VPS", "per_render_hour": 0.0, "paid": false },
-    "fly_shared_4x": { "label": "Fly.io shared-cpu-4x 4GB worker (est.)", "per_render_hour": 0.06, "paid": true, "note": "Estimate; check fly.io/docs/about/pricing" }
+    "self_hosted": {
+      "label": "Render on your own machine/VPS",
+      "per_render_hour": 0.0,
+      "paid": false
+    },
+    "fly_shared_4x": {
+      "label": "Fly.io shared-cpu-4x 4GB worker (est.)",
+      "per_render_hour": 0.06,
+      "paid": true,
+      "note": "Estimate; check fly.io/docs/about/pricing"
+    }
   },
   "storage": {
-    "supabase_or_r2": { "label": "Storage (R2 $0.015/GB-month, egress free)", "per_gb_month": 0.015, "gb_per_minute_1080p": 0.04 }
+    "supabase_or_r2": {
+      "label": "Storage (R2 $0.015/GB-month, egress free)",
+      "per_gb_month": 0.015,
+      "gb_per_minute_1080p": 0.04
+    }
   },
   "agent_token_budgets": {
     "_comment": "Tokens per call used for estimates. Ledger records actuals.",
-    "channel_kit": { "in": 1500, "out": 1600 },
-    "channel_kit_item": { "in": 1200, "out": 300 },
-    "ideas": { "in": 2500, "out": 7000 },
-    "research": { "in": 24000, "out": 4500 },
-    "script_draft": { "in": 7000, "out": 3200 },
+    "channel_kit": {
+      "in": 1500,
+      "out": 1600
+    },
+    "channel_kit_item": {
+      "in": 1200,
+      "out": 300
+    },
+    "ideas": {
+      "in": 2500,
+      "out": 7000
+    },
+    "research": {
+      "in": 24000,
+      "out": 4500
+    },
+    "script_draft": {
+      "in": 7000,
+      "out": 3200
+    },
     "script_expand_overhead_in_per_scene": 3500,
-    "visual_director": { "in": 8000, "out": 4000 },
-    "editor_seo_overhead": { "in": 2500, "out": 2500 }
+    "visual_director": {
+      "in": 8000,
+      "out": 4000
+    },
+    "editor_seo_overhead": {
+      "in": 2500,
+      "out": 2500
+    }
   },
   "render_hours_per_video_minute": 0.012,
   "tiers": {
-    "free": { "llm": "gemini:gemini-2.5-flash", "polish_llm": null, "tts": "kokoro:am_michael", "compute": "self_hosted", "label": "Free ($0)" },
-    "standard": { "llm": "openai:gpt-4o-mini", "polish_llm": null, "tts": "openai:tts-1", "compute": "fly_shared_4x", "label": "Standard" },
-    "premium": { "llm": "openai:gpt-4o-mini", "polish_llm": "openai:gpt-4o", "tts": "elevenlabs:eleven_multilingual_v2", "compute": "fly_shared_4x", "label": "Premium" }
+    "free": {
+      "llm": "gemini:gemini-3.1-flash-lite",
+      "polish_llm": null,
+      "tts": "kokoro:am_michael",
+      "compute": "self_hosted",
+      "label": "Free ($0)"
+    },
+    "standard": {
+      "llm": "openai:gpt-4o-mini",
+      "polish_llm": null,
+      "tts": "openai:tts-1",
+      "compute": "fly_shared_4x",
+      "label": "Standard"
+    },
+    "premium": {
+      "llm": "openai:gpt-4o-mini",
+      "polish_llm": "openai:gpt-4o",
+      "tts": "elevenlabs:eleven_multilingual_v2",
+      "compute": "fly_shared_4x",
+      "label": "Premium"
+    }
   },
   "guardrail": {
     "standard_max_usd_per_10_min": 5.0,
-    "premium_target_usd_per_10_min": [5.0, 15.0]
+    "premium_target_usd_per_10_min": [
+      5.0,
+      15.0
+    ]
   }
 }
