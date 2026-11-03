@@ -103,3 +103,30 @@ def test_45_and_60_minute_lengths_allowed(db, user):
     import psycopg
     with pytest.raises(psycopg.errors.CheckViolation):
         db.execute("insert into channels (user_id, niche, target_minutes) values (%s,'x',50)", (user,))
+
+
+def test_visual_plan_chunks_and_fills_skipped_scenes(monkeypatch):
+    from types import SimpleNamespace as NS
+    from ycb.agents import core
+    from ycb.schemas import FootageNeed, FootagePlan
+    calls = []
+
+    def fake(out, user, **kw):  # never plans scene 5, and plans scene 2 only when asked a second time
+        import re as _re
+        idxs = [int(x) for x in _re.search(r"scene numbers: \[([\d, ]+)\]", user).group(1).split(",")]
+        calls.append(idxs)
+        keep = [i for i in idxs if i != 5 and not (i == 2 and len(calls) == 1)]
+        if not keep:
+            raise ValueError("model returned nothing usable")
+        needs = [FootageNeed(scene_idx=i, priority=1, tier="real", description="d", search_query="q", source_hint="h") for i in keep]
+        while len(needs) < 3:
+            needs.append(FootageNeed(scene_idx=keep[0], priority=3, tier="stock_broll", description="b", search_query="q", source_hint="h"))
+        return FootagePlan(needs=needs), None
+    monkeypatch.setattr(core, "complete_json", fake)
+    monkeypatch.setattr(core.db, "q1", lambda *a, **k: {"case_info": {"case_name": "Test case"}})
+    draft = NS(scenes=[NS(idx=i, title=f"S{i}", draft="x") for i in range(9)])
+    plan = core.visual_plan({"id": "p", "title": "T", "idea_id": "i"}, {"user_id": "u"}, draft, "gemini", "m", None)
+    assert {n.scene_idx for n in plan.needs} == set(range(9))
+    assert calls[0] == [0, 1, 2, 3] and [2] in calls  # grouped, then re-asked only for the skipped scene
+    fb = [n for n in plan.needs if n.scene_idx == 5]
+    assert len(fb) == 1 and fb[0].tier == "news_document" and "Test case" in fb[0].search_query

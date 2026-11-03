@@ -171,13 +171,18 @@ def _retrieve(project: dict, query: str, fixture_set: str | None, idea: dict | N
     if ref.get("title"):
         for sec in discovery.wikipedia_sections(ref["title"]):
             found.append({**sec, "tier": "reference", "provider": "wikipedia"})
-    for item in sources.courtlistener(query):
+    def safe(fn, *a, **k):  # one slow or broken source never stops the research
+        try:
+            return fn(*a, **k)
+        except Exception:  # noqa: BLE001
+            return []
+    for item in safe(sources.courtlistener, query):
         found.append({**item, "tier": "court_record", "provider": "courtlistener"})
-    for item in sources.gdelt_news(query, gov_only=True):
+    for item in safe(sources.gdelt_news, query, gov_only=True):
         found.append({**item, "tier": "agency_release", "provider": "gdelt"})
-    for item in sources.gdelt_news(query):
+    for item in safe(sources.gdelt_news, query):
         found.append({**item, "tier": "contemporaneous_news", "provider": "gdelt"})
-    for c in sources.library_of_congress(query, rows=5):
+    for c in safe(sources.library_of_congress, query, rows=5):
         found.append({"title": c.title, "url": c.source_url, "publisher": "Library of Congress",
                       "published_at": c.release_date, "tier": "reference", "provider": "loc", "excerpt": ""})
     found.sort(key=lambda s: TIER_ORDER[s["tier"]])
@@ -256,13 +261,7 @@ def production_pack(job: dict) -> dict:
         db.x("""insert into scenes (project_id, idx, title, chapter_title, draft, on_screen_text)
                 values (%s,%s,%s,%s,%s,%s)""", (project["id"], s.idx, s.title, s.chapter_title, s.draft, s.on_screen_text))
 
-    scenes_txt = "\n".join(f"Scene {s.idx}: {s.title}\n{s.draft}" for s in draft.scenes)
-    plan, _ = complete_json(out=FootagePlan, agent="visual_director", provider=prov, model=model,
-                            system=prompts.VISUAL_DIRECTOR, user=f"Topic: {project['title']}\n\n{scenes_txt}",
-                            user_id=job["user_id"], project_id=project["id"],
-                            idem=f"project:{project['id']}:visual_director", fixture=_fx(fx, "visual_director"))
-    if {n.scene_idx for n in plan.needs} != set(range(n_scenes)):
-        raise BusinessRuleViolation("Visual Director must plan visuals for every scene")
+    plan = visual_plan(project, job, draft, prov, model, fx)
     db.x("delete from footage_plan where project_id=%s", (project["id"],))
     for n in sorted(plan.needs, key=lambda n: (n.scene_idx, n.priority)):
         db.x("""insert into footage_plan (project_id, scene_idx, priority, tier, description, search_query, source_hint)
@@ -284,6 +283,56 @@ def production_pack(job: dict) -> dict:
          (db.jsonb(pack), seo.titles[0], seo.description, seo.tags, seo.disclosure_line, project["id"]))
     db.x("update ideas set status='in_production' where id=%s", (project["idea_id"],))
     return {"scenes": n_scenes, "claims": len(res.claims), "footage_needs": len(plan.needs)}
+
+
+def visual_plan(project: dict, job: dict, draft, prov: str, model: str, fx: str | None):
+    """Visual Director in groups of 4 scenes (long videos overwhelm one call). Scenes a call skips are asked for
+    again once; if still missing they get an honest documents/maps plan, never invented footage."""
+    from ..schemas import FootageNeed
+    if fx:  # fixture mode: one call, as recorded
+        plan, _ = complete_json(out=FootagePlan, agent="visual_director", provider=prov, model=model, system=prompts.VISUAL_DIRECTOR,
+                                user=f"Topic: {project['title']}\n\n" + "\n".join(f"Scene {s.idx}: {s.title}\n{s.draft}" for s in draft.scenes),
+                                user_id=job["user_id"], project_id=project["id"], idem=f"project:{project['id']}:visual_director",
+                                fixture=_fx(fx, "visual_director"))
+        if {n.scene_idx for n in plan.needs} != {s.idx for s in draft.scenes}:
+            raise BusinessRuleViolation("Visual Director must plan visuals for every scene")
+        return plan
+    idea = db.q1("select case_info from ideas where id=%s", (project["idea_id"],)) if project["idea_id"] else None
+    case = (idea or {}).get("case_info") or {}
+    case_line = " · ".join(str(case[k]) for k in ("case_name", "location", "year", "agency") if case.get(k))
+    needs, reds, foia = [], [], []
+    groups = [draft.scenes[i:i + 4] for i in range(0, len(draft.scenes), 4)]
+    for g in groups:
+        want = {s.idx for s in g}
+        got: set[int] = set()
+        for attempt in range(2):
+            todo = [s for s in g if s.idx not in got]
+            txt = "\n".join(f"Scene {s.idx}: {s.title}\n{s.draft}" for s in todo)
+            ask = (f"Topic: {project['title']}\nCase: {case_line or '-'}\n"
+                   f"Plan visuals for EXACTLY these scene numbers: {[s.idx for s in todo]} (every one of them, using these "
+                   f"scene_idx values).\n\n{txt}")
+            try:
+                part, _ = complete_json(out=FootagePlan, agent="visual_director", provider=prov, model=model,
+                                        system=prompts.VISUAL_DIRECTOR, user=ask, user_id=job["user_id"], project_id=project["id"],
+                                        idem=f"project:{project['id']}:visual_director:{min(want)}:{attempt}")
+            except Exception:  # noqa: BLE001 - schema failure on one group: retry it, then fall back
+                continue
+            for n in part.needs:
+                if n.scene_idx in want:
+                    needs.append(n)
+                    got.add(n.scene_idx)
+            reds += [r for r in part.redactions if r.scene_idx in want]
+            foia += part.foia_suggestions
+            if got == want:
+                break
+        for s in g:
+            if s.idx not in got:  # honest fallback: records, maps and documents for this scene
+                base = case.get("case_name") or project["title"]
+                needs.append(FootageNeed(scene_idx=s.idx, priority=2, tier="news_document",
+                                         description=f"Documents, records or location photos for: {s.title}",
+                                         search_query=f"{base} {s.title}"[:120],
+                                         source_hint="court records, agency press releases, Wikimedia Commons"))
+    return FootagePlan(needs=needs, redactions=reds, foia_suggestions=list(dict.fromkeys(foia))[:10])
 
 
 def scenes_for(minutes: int) -> int:
