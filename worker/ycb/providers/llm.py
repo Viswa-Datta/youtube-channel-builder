@@ -59,21 +59,44 @@ def _anthropic(model: str, system: str, user: str, schema: dict, name: str) -> t
     return json.dumps(block["input"]), d["usage"]["input_tokens"], d["usage"]["output_tokens"]
 
 
-def _gemini(model: str, system: str, user: str, schema: dict, name: str) -> tuple[str, int, int]:
-    require("gemini")
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+def _gemini_models() -> list[str]:
     import os
-    model = os.environ.get("GEMINI_MODEL") or model  # Google retires models often; override without a code change
+    first = os.environ.get("GEMINI_MODEL") or ""
+    fallbacks = [m.strip() for m in os.environ.get("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-flash-lite-latest").split(",")]
+    return [m for m in dict.fromkeys([first, *fallbacks]) if m]
+
+
+def _gemini(model: str, system: str, user: str, schema: dict, name: str) -> tuple[str, int, int]:
+    """Key goes in the x-goog-api-key header (never the URL, so it cannot leak into logs or error messages).
+    Busy/overloaded responses (429/500/503) are retried with backoff, then the next fallback model is tried."""
+    import time as _t
+    require("gemini")
     prompt = f"{user}\n\nReturn ONLY JSON that validates against this JSON Schema:\n{json.dumps(schema)}"
-    r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                      params={"key": settings.gemini_api_key}, timeout=300,
-                      json={"systemInstruction": {"parts": [{"text": system}]},
-                            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                            "generationConfig": {"responseMimeType": "application/json", "temperature": 0.6}})
-    r.raise_for_status()
-    d = r.json()
-    text = "".join(p.get("text", "") for p in d["candidates"][0]["content"]["parts"])
-    u = d.get("usageMetadata", {})
-    return text, u.get("promptTokenCount", 0), u.get("candidatesTokenCount", 0)
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json", "temperature": 0.6}}
+    last = ""
+    for m in (_gemini_models() or [model]):
+        for attempt in range(4):
+            r = requests.post(f"{GEMINI_BASE}/models/{m}:generateContent", timeout=300, json=body,
+                              headers={"x-goog-api-key": settings.gemini_api_key})
+            if r.status_code in (429, 500, 503):
+                last = f"{m}: HTTP {r.status_code} (Google busy)"
+                _t.sleep(min(60, 5 * 2 ** attempt))
+                continue
+            if r.status_code == 404:
+                last = f"{m}: model not found"
+                break
+            if not r.ok:
+                raise RuntimeError(f"Gemini {m} returned HTTP {r.status_code}: {r.text[:300]}")
+            d = r.json()
+            text = "".join(p.get("text", "") for p in d["candidates"][0]["content"]["parts"])
+            u = d.get("usageMetadata", {})
+            return text, u.get("promptTokenCount", 0), u.get("candidatesTokenCount", 0)
+    raise RuntimeError(f"Gemini unavailable after retries and fallbacks ({last})")
 
 
 def _ollama(model: str, system: str, user: str, schema: dict, name: str) -> tuple[str, int, int]:
@@ -164,7 +187,7 @@ def check_llm() -> dict:
         word: str
 
     if settings.gemini_api_key:
-        r = requests.get("https://generativelanguage.googleapis.com/v1beta/models", params={"key": settings.gemini_api_key, "pageSize": 200}, timeout=30)
+        r = requests.get(f"{GEMINI_BASE}/models", params={"pageSize": 200}, headers={"x-goog-api-key": settings.gemini_api_key}, timeout=30)
         names = [m["name"].split("/", 1)[1] for m in r.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])] if r.ok else []
         model = os.environ.get("GEMINI_MODEL") or "gemini-3.1-flash-lite"
         res = {"key_valid": r.ok, "model": model, "model_available": model in names,
@@ -174,7 +197,7 @@ def check_llm() -> dict:
                 txt, tin, tout = _gemini(model, "Reply with JSON only.", 'Return {"ok": true, "word": "ready"}', Ping.model_json_schema(), "Ping")
                 res["test_call"] = Ping.model_validate_json(_strip_fences(txt)).model_dump()
             except Exception as e:  # noqa: BLE001
-                res["test_call_error"] = str(e)[:300]
+                res["test_call_error"] = str(e)[:300].replace(settings.gemini_api_key or "\x00", "[redacted]")
         out["gemini"] = res
     if settings.openai_api_key:
         r = requests.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {settings.openai_api_key}"}, timeout=30)
