@@ -11,7 +11,47 @@ import { usd } from "@/lib/utils";
 type Idea = {
   id: string; title: string; hook: string; angle: string; pillar: string | null; demand_score: number; competition_score: number;
   feasibility_score: number; est_cost_usd: number; rank_score: number; status: string; rationale: string | null;
+  case_info?: { case_name?: string; location?: string; year?: number; agency?: string; case_status?: string;
+    public_footage?: string[]; reference?: { title: string; url: string } | null; youtube_checked?: boolean } | null;
+  footage_evidence?: { kind: string; source: string; title: string; url: string; official?: boolean; channel?: string | null; media_type?: string }[] | null;
+  case_verified?: boolean;
 };
+
+/** Real case details + what the live footage search actually found. */
+function CaseDetails({ i }: { i: Idea }) {
+  const c = i.case_info;
+  if (!c?.case_name) return null;
+  const ev = i.footage_evidence ?? [];
+  const official = ev.filter((e) => e.official).length;
+  const files = ev.filter((e) => e.kind === "downloadable").length;
+  return (
+    <div className="mt-2 space-y-1 rounded border bg-muted/40 p-2 text-xs">
+      <div className="font-medium">{c.case_name}</div>
+      <div className="text-muted-foreground">{[c.location, c.year, c.agency, c.case_status].filter(Boolean).join(" · ")}</div>
+      <div className="flex flex-wrap gap-1">
+        {i.case_verified
+          ? <a href={c.reference?.url} target="_blank" rel="noreferrer"><Badge variant="success">Case confirmed ↗</Badge></a>
+          : <Badge variant="danger">Not confirmed</Badge>}
+        {official > 0 && <Badge variant="success">{official} official video{official > 1 ? "s" : ""}</Badge>}
+        {files > 0 && <Badge variant="secondary">{files} free file{files > 1 ? "s" : ""}</Badge>}
+        {c.youtube_checked === false && <Badge variant="outline">YouTube not searched</Badge>}
+      </div>
+      {ev.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-muted-foreground">Footage found ({ev.length})</summary>
+          <ul className="mt-1 space-y-0.5">
+            {ev.slice(0, 8).map((e) => (
+              <li key={e.url} className="truncate">
+                <a className="underline" href={e.url} target="_blank" rel="noreferrer">{e.title || e.url}</a>
+                <span className="text-muted-foreground"> · {e.source}{e.channel ? ` · ${e.channel}` : ""}{e.official ? " · official" : ""}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
 const COLS = [
   ["suggested", "Suggested"], ["shortlisted", "Shortlisted"], ["in_production", "In Production"], ["ready", "Ready"], ["published", "Published"],
 ] as const;
@@ -56,6 +96,7 @@ export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[];
                     )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{i.hook}</p>
+                  <CaseDetails i={i} />
                   <div className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="secondary">Rank {Number(i.rank_score).toFixed(1)}</Badge>
                     <Badge variant="outline">Demand {i.demand_score}</Badge>

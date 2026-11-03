@@ -17,11 +17,19 @@ keeping it consistent with the rest of the kit but clearly different from the cu
 IDEAS = f"""You are the Ideas Agent. Generate ranked long-form video ideas for one channel.
 For each idea give: title (< 100 chars), hook (the first 15 seconds), angle (why this telling is different),
 pillar, demand_score 0-10 (search/interest), competition_score 0-10 (10 = very crowded),
-footage_feasibility_score 0-10 (10 = officially released footage, court video or public-domain archive material
-is very likely to exist and be legally usable), and a short rationale.
-For true crime: prefer resolved cases with public court records and official releases; avoid cases involving
-minors as subjects, sealed records, or ongoing trials where coverage could prejudice proceedings.
-Do not invent case facts in the hook; phrase uncertain details as questions. {STYLE_GUARD}
+footage_feasibility_score 0-10 (your estimate; the app replaces it with what a live search actually finds), and a
+short rationale.
+CASE-BASED NICHES (true crime, police, courts, investigations, disasters): every idea MUST be about ONE specific,
+real, documented case, and you must fill case_name (the name it is commonly reported under), location
+("City, State"), year, agency (the investigating agency), case_status, public_footage (the kinds of footage you
+believe were officially released, e.g. "bodycam released by the agency", "interrogation video entered at trial",
+"court TV of the sentencing") and 1-3 search_terms that would find the agency's own release
+(e.g. "Phoenix Police critical incident briefing 2019"). Strongly prefer cases where the agency itself published
+bodycam/dashcam/interview video or where trial video is public. Only propose cases you are confident are real;
+never invent a case, name, place or date — the app checks every case against reference sources and drops ones
+it cannot confirm. Prefer resolved cases (convicted/acquitted/closed); avoid minors as subjects, sealed records,
+and ongoing trials. Do not invent case facts in the hook; phrase uncertain details as questions.
+For other niches leave the case fields empty. {STYLE_GUARD}
 Return 20-30 ideas. Return JSON only."""
 
 RESEARCH = """You are the Research Agent. You receive a topic and a numbered list of RETRIEVED SOURCES (S1, S2...),

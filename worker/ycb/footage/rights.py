@@ -82,5 +82,8 @@ def edit_note(asset: dict) -> str:
         return f"Graphic made for this video: {asset.get('title') or ''}"
     if asset["tier"] == "gap":
         return f"GAP — no verified clip: {asset.get('title') or ''}"
-    return (f"{asset.get('title') or 'Clip'} — {asset.get('agency')} via {asset.get('source_name')}, released "
-            f"{asset.get('release_date')}, {asset.get('license')} ({asset.get('source_url')})")
+    lic = (asset.get("meta") or {}).get("license_short")
+    by = asset.get("agency") or "unknown author"
+    when = f", released {asset['release_date']}" if asset.get("release_date") else ""
+    return (f"{asset.get('title') or 'Clip'} — {by} via {asset.get('source_name')}{when}, {asset.get('license')}"
+            f"{' (' + lic + ')' if lic else ''} ({asset.get('source_url')})")

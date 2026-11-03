@@ -93,23 +93,71 @@ def ideas(job: dict) -> dict:
                              user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
     est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
     n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
-    ranked = sorted(batch.ideas, key=rank_score, reverse=True)
-    for pos, i in enumerate(ranked):
+    probes = probe_ideas(batch.ideas) if not fx else {}
+    rows = []
+    for k, i in enumerate(batch.ideas):
+        pr = probes.get(k)
+        if pr is not None:
+            i.footage_feasibility_score = pr["feasibility"]  # measured, not guessed
+        rows.append((i, pr))
+    # Drop cases nothing could confirm, as long as enough confirmed ones remain; otherwise keep them, flagged.
+    confirmed = [r for r in rows if r[1] is None or r[1]["verified"] or r[1]["evidence"]]
+    if len(confirmed) >= 10:
+        rows = confirmed
+    ranked = sorted(rows, key=lambda r: (rank_score(r[0]), bool(r[1] and r[1]["verified"])), reverse=True)
+    for pos, (i, pr) in enumerate(ranked):
+        case = {k: v for k, v in {"case_name": i.case_name, "location": i.location, "year": i.year, "agency": i.agency,
+                                   "case_status": i.case_status, "public_footage": i.public_footage,
+                                   "search_terms": i.search_terms,
+                                   "reference": (pr or {}).get("reference"),
+                                   "youtube_checked": (pr or {}).get("youtube_checked")}.items() if v not in (None, [], "")}
         db.x("""insert into ideas (channel_id, batch, title, hook, angle, pillar, demand_score, competition_score,
-                feasibility_score, est_cost_usd, rank_score, position, rationale)
-                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                feasibility_score, est_cost_usd, rank_score, position, rationale, case_info, footage_evidence, case_verified)
+                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
              (ch["id"], n_batch, i.title, i.hook, i.angle, i.pillar, i.demand_score, i.competition_score,
-              i.footage_feasibility_score, est, rank_score(i), pos, i.rationale))
-    return {"count": len(ranked), "batch": n_batch}
+              i.footage_feasibility_score, est, rank_score(i), pos, i.rationale, db.jsonb(case),
+              db.jsonb((pr or {}).get("evidence", [])), bool(pr and pr["verified"])))
+    return {"count": len(ranked), "batch": n_batch, "checked": len(probes),
+            "confirmed": sum(1 for _, pr in ranked if pr and pr["verified"])}
+
+
+def probe_ideas(ideas: list) -> dict[int, dict]:
+    """Live-check every case-based idea (exists? official footage found?). Network trouble never fails the job."""
+    from concurrent.futures import ThreadPoolExecutor
+    from ..footage.discovery import probe_case
+    todo = [(k, i) for k, i in enumerate(ideas) if i.case_name]
+
+    def one(ki):
+        k, i = ki
+        try:
+            return k, probe_case(i.case_name, i.location, i.agency, i.search_terms)
+        except Exception as e:  # noqa: BLE001
+            return k, {"verified": False, "reference": None, "evidence": [], "feasibility": i.footage_feasibility_score,
+                       "error": str(e)[:200]}
+    with ThreadPoolExecutor(4) as ex:
+        return dict(ex.map(one, todo))
 
 
 # ------------------------------------------------------------------ Research Agent
-def _retrieve(project: dict, query: str, fixture_set: str | None) -> list[dict]:
+def _retrieve(project: dict, query: str, fixture_set: str | None, idea: dict | None = None) -> list[dict]:
     """Collect sources in tier order. Fixture mode reads a pre-verified list (URLs checked by hand)."""
     if fixture_set:
         from ..config import REPO_ROOT
         return json.loads((REPO_ROOT / "fixtures" / fixture_set / "sources.json").read_text())
+    from ..footage import discovery
     found: list[dict] = []
+    case = (idea or {}).get("case_info") or {}
+    # Official releases the idea check already found (e.g. the agency's own bodycam upload): agency_release.
+    for e in (idea or {}).get("footage_evidence") or []:
+        if e.get("official"):
+            found.append({"title": e["title"], "url": e["url"], "publisher": e.get("channel") or e["source"],
+                          "published_at": e.get("published"), "tier": "agency_release", "provider": e["source"].lower(),
+                          "excerpt": "Official release found by the footage check (video; content not transcribed)."})
+    # The case's reference article, section by section.
+    ref = case.get("reference") or {}
+    if ref.get("title"):
+        for sec in discovery.wikipedia_sections(ref["title"]):
+            found.append({**sec, "tier": "reference", "provider": "wikipedia"})
     for item in sources.courtlistener(query):
         found.append({**item, "tier": "court_record", "provider": "courtlistener"})
     for item in sources.gdelt_news(query, gov_only=True):
@@ -120,13 +168,14 @@ def _retrieve(project: dict, query: str, fixture_set: str | None) -> list[dict]:
         found.append({"title": c.title, "url": c.source_url, "publisher": "Library of Congress",
                       "published_at": c.release_date, "tier": "reference", "provider": "loc", "excerpt": ""})
     found.sort(key=lambda s: TIER_ORDER[s["tier"]])
-    return found[:40]
+    return found[:45]
 
 
 def research(project: dict, job: dict, prov: str, model: str, fx: str | None) -> Research:
     idea = db.q1("select * from ideas where id=%s", (project["idea_id"],)) if project["idea_id"] else None
-    query = (idea or {}).get("title") or project["title"]
-    retrieved = _retrieve(project, query, fx)
+    case = (idea or {}).get("case_info") or {}
+    query = case.get("case_name") or (idea or {}).get("title") or project["title"]
+    retrieved = _retrieve(project, query, fx, idea)
     db.x("delete from research_sources where project_id=%s", (project["id"],))
     listing = []
     for n, s in enumerate(retrieved, 1):
@@ -137,7 +186,10 @@ def research(project: dict, job: dict, prov: str, model: str, fx: str | None) ->
              (project["id"], ref, s["tier"], s["title"], s.get("publisher"), s.get("url"),
               _date(s.get("published_at")), s.get("provider", "fixture"), s.get("excerpt")))
         listing.append(f"[{ref}] ({s['tier']}) {s['title']} — {s.get('publisher') or ''} {s.get('published_at') or ''}\n{s.get('excerpt') or ''}")
-    user = f"Topic: {query}\nAngle: {(idea or {}).get('angle', '')}\n\nRETRIEVED SOURCES:\n" + ("\n\n".join(listing) or "(none)")
+    case_line = " · ".join(str(case[k]) for k in ("case_name", "location", "year", "agency", "case_status") if case.get(k))
+    user = (f"Topic: {(idea or {}).get('title') or project['title']}\nCase: {case_line or '-'}\n"
+            f"Angle: {(idea or {}).get('angle', '')}\n\nRETRIEVED SOURCES:\n")
+    user = user + ("\n\n".join(listing) or "(none)")
     res, _ = complete_json(out=Research, agent="research", provider=prov, model=model, system=prompts.RESEARCH, user=user,
                            user_id=job["user_id"], project_id=project["id"], idem=f"project:{project['id']}:research",
                            fixture=_fx(fx, "research"))
@@ -169,7 +221,7 @@ def production_pack(job: dict) -> dict:
     prov, model, fx = llm_choice({"llm_provider": project["llm_provider"], "llm_model": project["llm_model"]}, tier)
     ledger.ensure_within_cap(job["user_id"], pricing.estimate("production_pack", tier, project["target_minutes"])["total_usd"],
                              "Production Pack")
-    n_scenes = job["payload"].get("scenes", 7)
+    n_scenes = job["payload"].get("scenes") or scenes_for(project["target_minutes"])
 
     res = research(project, job, prov, model, fx)
 
@@ -219,6 +271,11 @@ def production_pack(job: dict) -> dict:
          (db.jsonb(pack), seo.titles[0], seo.description, seo.tags, seo.disclosure_line, project["id"]))
     db.x("update ideas set status='in_production' where id=%s", (project["idea_id"],))
     return {"scenes": n_scenes, "claims": len(res.claims), "footage_needs": len(plan.needs)}
+
+
+def scenes_for(minutes: int) -> int:
+    """Scene count by length: long videos get more, shorter scenes (each ~4 minutes at 45-60 min)."""
+    return {8: 5, 12: 7, 20: 8, 30: 10, 45: 12, 60: 15}.get(int(minutes), max(5, min(16, int(minutes) // 4)))
 
 
 def fmt_ts(sec: float) -> str:

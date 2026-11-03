@@ -9,7 +9,7 @@ const Intake = z.object({
   audience: z.string().max(300).optional().default(""),
   language: z.string().min(2).max(10).default("en"),
   tone: z.string().max(200).optional().default(""),
-  target_minutes: z.union([z.literal(8), z.literal(12), z.literal(20), z.literal(30)]),
+  target_minutes: z.union([z.literal(8), z.literal(12), z.literal(20), z.literal(30), z.literal(45), z.literal(60)]),
   faceless: z.boolean().default(true),
   competitor_urls: z.array(z.string().url()).max(5).default([]),
 });

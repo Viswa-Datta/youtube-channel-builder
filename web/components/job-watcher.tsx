@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ type Job = {
 export function JobWatcher({ jobId, label }: { jobId: string; label: string }) {
   const [job, setJob] = useState<Job | null>(null);
   const router = useRouter();
+  const seen = useRef<string>("");
   useEffect(() => {
     let alive = true;
     let t: ReturnType<typeof setTimeout>;
@@ -22,7 +23,12 @@ export function JobWatcher({ jobId, label }: { jobId: string; label: string }) {
       if (r.ok && alive) {
         const j: Job = await r.json();
         setJob(j);
-        if (j.status === "succeeded" && (!j.render || j.render.status === "succeeded")) router.refresh();
+        // Refresh the page once each time the outcome changes (finished, or paused for the user at the Footage Desk).
+        const state = j.render?.status === "waiting_user" ? "waiting" : j.status === "succeeded" && (!j.render || j.render.status === "succeeded") ? "done" : j.status === "failed" ? "failed" : "";
+        if (state && seen.current !== state) {
+          seen.current = state;
+          router.refresh();
+        }
       }
       if (alive) t = setTimeout(tick, 3000);
     };

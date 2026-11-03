@@ -55,6 +55,14 @@ class Idea(BaseModel):
     competition_score: int = Field(ge=0, le=10, description="10 = very crowded")
     footage_feasibility_score: int = Field(ge=0, le=10, description="10 = verified public footage very likely")
     rationale: str
+    # Case-based niches (true crime etc.): the real case this idea is about. Optional for other niches.
+    case_name: str | None = Field(default=None, max_length=160, description="Common name of the real case, as reported")
+    location: str | None = Field(default=None, max_length=120, description="City, State/Country")
+    year: int | None = Field(default=None, ge=1900, le=2100)
+    agency: str | None = Field(default=None, max_length=160, description="Investigating agency, e.g. 'Phoenix Police Department'")
+    case_status: str | None = Field(default=None, max_length=60, description="e.g. convicted, acquitted, resolved, unsolved")
+    public_footage: list[str] = Field(default_factory=list, max_length=6, description="Kinds of footage believed public, e.g. 'bodycam released by agency'")
+    search_terms: list[str] = Field(default_factory=list, max_length=4, description="Queries to find the official footage")
 
 
 class IdeaBatch(BaseModel):

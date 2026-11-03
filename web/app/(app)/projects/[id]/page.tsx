@@ -46,9 +46,16 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               defaultTier={p.tier} ctx={ctx} endpoint={`/api/projects/${id}/render`} payload={{}}
               redirectTo={`/projects/${id}?job={job}`} />
           )}
+          {latest && <Button variant="outline" asChild><Link href={`/projects/${id}/footage`}>Footage Desk</Link></Button>}
           {latest?.status === "succeeded" && <Button variant="outline" asChild><Link href={`/projects/${id}/studio`}>Review Studio</Link></Button>}
         </div>
       </div>
+      {latest?.status === "waiting_user" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-accent bg-accent/10 p-3 text-sm">
+          <span><b>Your video is paused at the Footage Desk.</b> The app found footage to review and has a few things only you can do (like saving an official clip from YouTube).</span>
+          <Button asChild><Link href={`/projects/${id}/footage`}>Open the Footage Desk →</Link></Button>
+        </div>
+      )}
       {activeJob && <JobWatcher jobId={activeJob} label={p.status === "pack_pending" ? "Research → Script → Visual Director → SEO" : "Whole video render"} />}
 
       {!pack ? <p className="text-sm text-muted-foreground">The production pack appears here when the agents finish.</p> : (

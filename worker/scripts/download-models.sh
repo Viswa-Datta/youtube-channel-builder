@@ -14,3 +14,8 @@ python3 -c "import json,sys; json.dump({'vocab': json.load(open('$DEST/kokoro-co
 fetch https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx face_detection_yunet_2023mar.onnx
 fetch https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-384-license-plates-end2end.onnx yolo-v9-t-384-license-plates-end2end.onnx
 ls -la "$DEST"
+# Natural Earth (public domain) map data for location maps
+mkdir -p "$DEST/naturalearth"
+for f in ne_50m_admin_1_states_provinces_lakes ne_50m_admin_0_countries ne_10m_populated_places_simple; do
+  fetch "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/$f.geojson" "naturalearth/$f.geojson"
+done

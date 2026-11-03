@@ -18,7 +18,7 @@ from .. import db, ledger, pricing, queue
 from ..agents import core as agents
 from ..config import settings
 from ..footage import rights, sources
-from ..media import blur, captions, cards, compose
+from ..media import blur, captions, cards, compose, maps
 from ..media.ff import acceptance, duration
 from ..providers import tts
 from ..storage import project_key, store
@@ -136,47 +136,150 @@ def _tts_model(p: dict) -> str | None:
 
 
 # ------------------------------------------------------------------ stage: footage (Visual Director execution)
-def stage_footage(c: Ctx) -> None:
+MAX_YT_REQUESTS = 8      # help requests from YouTube finds per project (don't bury the user)
+MAX_FIND_REQUESTS = 3    # "we couldn't find it, do you know where it is?" requests per project
+
+
+def _scene_for(text: str, scenes: list[dict]) -> dict:
+    """Best scene for a found item: most shared distinctive words with the scene's title and draft."""
+    from ..footage.discovery import _words
+    w = _words(text)
+    return max(scenes, key=lambda s: (len(w & _words(s["title"] + " " + (s["draft"] or ""))), -s["idx"]))
+
+
+def _help(c: Ctx, scene: dict | None, kind: str, title: str, instructions: str, **kw) -> bool:
+    """Insert a help request once (deduplicated by kind + source_url or title)."""
+    key = kw.get("source_url") or title
+    if db.q1("select 1 from help_requests where project_id=%s and kind=%s and coalesce(source_url,title)=%s", (c.pid, kind, key)):
+        return False
+    db.x("""insert into help_requests (project_id, scene_id, kind, title, instructions, source_url, source_name, agency,
+            release_date, start_sec, end_sec, license_hint, rights_note)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+         (c.pid, scene["id"] if scene else None, kind, title[:300], instructions, kw.get("source_url"), kw.get("source_name"),
+          kw.get("agency"), _d(kw.get("release_date")), kw.get("start_sec"), kw.get("end_sec"), kw.get("license_hint"),
+          kw.get("rights_note")))
+    return True
+
+
+def _candidate(c: Ctx, scene: dict, tier: str, kind: str, title: str, source_name: str, source_url: str, license: str,
+               rights_note: str, agency: str | None = None, release_date: str | None = None, meta: dict | None = None) -> None:
+    if db.q1("select 1 from assets where project_id=%s and source_url=%s and scene_id=%s", (c.pid, source_url, scene["id"])):
+        return
+    db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, agency, release_date, source_url,
+            license, rights_notes, is_broll_label, selected, meta)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s)""",
+         (c.pid, scene["id"], kind, tier, title[:300], source_name, agency, _d(release_date), source_url, license,
+          rights_note, tier == "stock_broll", db.jsonb(meta or {})))
+
+
+def stage_footage(c: Ctx) -> str | None:
+    """Find footage for every scene. Downloads only where the source allows it; everything the app may not fetch
+    itself (YouTube uploads, unknown locations) becomes a help request. Returns "wait" to pause at the Footage Desk."""
+    from ..footage import discovery
     scenes = c.scenes()
     plan = db.q("select * from footage_plan where project_id=%s order by scene_idx, priority", (c.pid,))
+    idea = db.q1("select * from ideas where id=%s", (c.project["idea_id"],)) if c.project["idea_id"] else None
+    case = (idea or {}).get("case_info") or {}
+    agency = case.get("agency")
+    yt_count = db.q1("select count(*) n from help_requests where project_id=%s and kind='save_clip'", (c.pid,))["n"]
+
+    # 1) official videos the idea check already found
+    for e in (idea or {}).get("footage_evidence") or []:
+        if e.get("official") and e.get("source") == "YouTube" and yt_count < MAX_YT_REQUESTS:
+            sc = _scene_for(e["title"], scenes)
+            yt_count += _help(c, sc, "save_clip", e["title"], _yt_instructions(e), source_url=e["url"], source_name="YouTube",
+                              agency=e.get("channel") or agency, release_date=e.get("published"),
+                              license_hint="Public Record with release terms", rights_note=e.get("rights_note"))
+
     for k, s in enumerate(scenes):
         needs = [n for n in plan if n["scene_idx"] == s["idx"]]
-        chosen = db.q("select * from assets where scene_id=%s and selected and kind in ('clip','image','document')", (s["id"],))
         for n in needs:
             if n["status"] in ("found", "gap", "rejected"):
                 continue
-            cands = sources.search_scene(dict(n))
-            if not cands:
-                db.x("update footage_plan set status='gap' where id=%s", (n["id"],))
-                continue
-            for cand in cands[:5]:
-                stock = cand.tier == "stock_broll"
-                db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, agency, release_date, source_url,
-                        license, rights_notes, is_broll_label, selected, meta)
-                        values (%s,%s,'clip',%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s)""",
-                     (c.pid, s["id"], cand.tier, cand.title, cand.source_name, cand.agency, _d(cand.release_date),
-                      cand.source_url, cand.license, cand.rights_note, stock,
-                      db.jsonb({"media_url": cand.media_url, "duration": cand.duration, "search_query": n["search_query"]})))
-            db.x("update footage_plan set status='found' where id=%s", (n["id"],))
-        # Auto-select only generic stock B-roll; real footage waits for a person's rights check in the UI.
-        if not chosen:
+            q = n["search_query"]
+            found = 0
+            try:
+                if n["tier"] == "real":
+                    if yt_count < MAX_YT_REQUESTS:
+                        yq = q if not agency or agency.lower() in q.lower() else f"{agency} {q}"
+                        for e in discovery.youtube(yq, 6):
+                            if e.official and discovery.FOOTAGE_RE.search(e.title) and yt_count < MAX_YT_REQUESTS:
+                                if _help(c, s, "save_clip", e.title, _yt_instructions(e.dict()), source_url=e.url, source_name="YouTube",
+                                         agency=e.channel, release_date=e.published, license_hint="Public Record with release terms",
+                                         rights_note=e.rights_note):
+                                    yt_count += 1
+                                    found += 1
+                    for cand in sources.search_scene(dict(n)):
+                        if cand.license != "Do Not Use":
+                            _candidate(c, s, "real", "clip", cand.title, cand.source_name, cand.source_url, cand.license,
+                                       cand.rights_note, cand.agency, cand.release_date,
+                                       {"media_url": cand.media_url, "search_query": q, **cand.meta})
+                            found += 1
+                    for e in discovery.wikimedia_commons(q, 4, "video"):
+                        if e.license != "Do Not Use" and e.media_url:
+                            _candidate(c, s, "real", "clip", e.title, e.source, e.url, e.license, e.rights_note, e.channel,
+                                       e.published, {"media_url": e.media_url, "search_query": q, **e.meta})
+                            found += 1
+                elif n["tier"] == "news_document":
+                    for e in discovery.wikimedia_commons(q, 5, "image"):
+                        if e.license != "Do Not Use" and e.media_url:
+                            _candidate(c, s, "news_document", "image", e.title, e.source, e.url, e.license, e.rights_note,
+                                       e.channel, e.published, {"media_url": e.media_url, "search_query": q, **e.meta})
+                            found += 1
+                else:
+                    for cand in sources.search_scene(dict(n))[:4]:
+                        _candidate(c, s, "stock_broll", "clip", cand.title, cand.source_name, cand.source_url, cand.license,
+                                   cand.rights_note, cand.agency, None, {"media_url": cand.media_url, "duration": cand.duration,
+                                                                         "search_query": q})
+                        found += 1
+            except Exception as ex:  # noqa: BLE001 - a flaky API must not kill the render; it becomes a gap
+                db.x("update footage_plan set source_hint=coalesce(source_hint,'') || %s where id=%s", (f" [search error: {str(ex)[:120]}]", n["id"]))
+            db.x("update footage_plan set status=%s where id=%s", ("found" if found else "gap", n["id"]))
+
+        # Stock B-roll is generic and licensed: auto-select one if the scene has nothing else yet.
+        if not db.q1("select 1 from assets where scene_id=%s and selected and kind in ('clip','image')", (s["id"],)):
             stock = db.q1("""select * from assets where scene_id=%s and tier='stock_broll' and license='Licensed'
                              and meta->>'media_url' is not null order by created_at limit 1""", (s["id"],))
             if stock:
                 _download(c, stock)
                 db.x("update assets set selected=true where id=%s", (stock["id"],))
-        # Every scene's visuals are logged: generated cards always, plus an explicit GAP for unmet real-footage needs.
         db.x("delete from assets where scene_id=%s and tier in ('generated','gap') and kind='card'", (s["id"],))
         db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, license, selected, rights_notes)
                 values (%s,%s,'card','generated',%s,'YouTube Channel Builder','Licensed',true,'Made by the app for this video')""",
-             (c.pid, s["id"], f"Document and chapter cards, scene {s['idx']}"))
-        unmet = [n for n in db.q("select * from footage_plan where project_id=%s and scene_idx=%s and tier='real'", (c.pid, s["idx"]))
-                 if not db.q1("select 1 from assets where scene_id=%s and tier='real' and selected", (s["id"],))]
-        for n in unmet:
-            db.x("""insert into assets (project_id, scene_id, kind, tier, title, license, selected, meta)
-                    values (%s,%s,'card','gap',%s,'Do Not Use',false,%s)""",
-                 (c.pid, s["id"], f"GAP: {n['description']}", db.jsonb({"search_query": n["search_query"], "source_hint": n["source_hint"]})))
+             (c.pid, s["id"], f"Maps, timeline and document graphics, scene {s['idx']}"))
         c.progress("footage", (k + 1) / len(scenes), f"scene {s['idx']}")
+
+    # 2) real-footage needs nothing could satisfy: record a GAP and (for the most important ones) ask the user.
+    find_count = db.q1("select count(*) n from help_requests where project_id=%s and kind='find_source'", (c.pid,))["n"]
+    for n in db.q("select * from footage_plan where project_id=%s and tier='real' and status='gap' order by priority, scene_idx", (c.pid,)):
+        sc = next(x for x in scenes if x["idx"] == n["scene_idx"])
+        has_real = db.q1("""select 1 from assets where scene_id=%s and tier='real'
+                            union select 1 from help_requests where scene_id=%s and kind='save_clip'""", (sc["id"], sc["id"]))
+        if has_real:
+            continue
+        db.x("""insert into assets (project_id, scene_id, kind, tier, title, license, selected, meta)
+                values (%s,%s,'card','gap',%s,'Do Not Use',false,%s)""",
+             (c.pid, sc["id"], f"GAP: {n['description']}", db.jsonb({"search_query": n["search_query"], "source_hint": n["source_hint"]})))
+        if find_count < MAX_FIND_REQUESTS:
+            find_count += _help(c, sc, "find_source", f"Find: {n['description']}",
+                                "The app could not find an official release for this. If you know where the agency, court or "
+                                f"archive published it, save the original file and upload it here. Where to look: "
+                                f"{n['source_hint'] or 'the agency transparency portal or the court website'}. "
+                                "Otherwise press Skip: this scene will use maps, documents and timeline graphics instead.")
+
+    waiting = db.q1("""select (select count(*) from help_requests where project_id=%s and status='open') +
+                              (select count(*) from assets where project_id=%s and tier in ('real','news_document')
+                                 and not rights_checked and license <> 'Do Not Use' and coalesce(meta->>'dismissed','') = '') n""",
+                    (c.pid, c.pid))["n"]
+    return "wait" if waiting else None
+
+
+def _yt_instructions(e: dict) -> str:
+    return (f"Official video from {e.get('channel') or 'the agency'}"
+            f"{' (' + e['published'] + ')' if e.get('published') else ''}. The app is not allowed to download from YouTube. "
+            "Open the link, save the video with YouTube's own tools or from the agency's own website (agencies often post "
+            "the same file on their transparency page), then upload it here. Before you upload, check the agency's "
+            "release terms. If you only need part of it, write the start and end times in the upload form.")
 
 
 def _d(s):
@@ -184,24 +287,50 @@ def _d(s):
 
 
 def _download(c: Ctx, asset: dict) -> None:
+    """Fetch an approved asset from a source that allows it. Videos are normalised to MP4 (Commons serves WebM)."""
     import requests
-    url = asset["meta"].get("media_url")
-    key = project_key(c.pid, "clips", "raw", f"{asset['id']}.mp4")
-    if store().exists(key):
-        return
-    tmp = c.work / "dl" / f"{asset['id']}.mp4"
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(tmp, "wb") as f:
-            for ch in r.iter_content(1 << 20):
-                f.write(ch)
-    store().put(tmp, key, "video/mp4")
+    from ..footage.discovery import UA
+    meta = asset["meta"] or {}
+    url = meta.get("media_url")
+    if not url and meta.get("identifier"):  # Internet Archive: resolve the item's video file
+        url = sources.internet_archive_media_url(meta["identifier"])
+    if not url:
+        raise agents.BusinessRuleViolation(f"asset {asset['id']} has no downloadable file; upload it on the Footage Desk")
+    image = asset["kind"] == "image"
+    ext = ".jpg" if image else ".mp4"
+    key = project_key(c.pid, "images" if image else "clips", "raw", f"{asset['id']}{ext}")
+    if not store().exists(key):
+        tmp = c.work / "dl" / f"{asset['id']}.src"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        with requests.get(url, stream=True, timeout=180, headers=UA) as r:
+            r.raise_for_status()
+            with open(tmp, "wb") as f:
+                for ch in r.iter_content(1 << 20):
+                    f.write(ch)
+        out = c.work / "dl" / f"{asset['id']}{ext}"
+        if image:
+            from PIL import Image
+            Image.open(tmp).convert("RGB").save(out, quality=92)
+        elif url.lower().split("?")[0].endswith(".mp4"):
+            tmp.replace(out)
+        else:
+            from ..media.ff import run as ff
+            ff(["-i", str(tmp), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "160k", str(out)])
+        store().put(out, key, "image/jpeg" if image else "video/mp4")
     db.x("update assets set storage_path=%s where id=%s", (key, asset["id"]))
+
+
+def _fetch_selected(c: Ctx) -> None:
+    """Download every approved asset that is still only a link (approved on the Footage Desk)."""
+    for a in db.q("""select * from assets where project_id=%s and selected and storage_path is null
+                     and kind in ('clip','image') and tier in ('real','news_document','stock_broll')""", (c.pid,)):
+        _download(c, a)
 
 
 # ------------------------------------------------------------------ stage: blur
 def stage_blur(c: Ctx) -> None:
+    _fetch_selected(c)
     scenes = c.scenes()
     for k, s in enumerate(scenes):
         clips = db.q("""select * from assets where scene_id=%s and selected and kind='clip' and storage_path is not null""", (s["id"],))
@@ -247,17 +376,44 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
     timeline = (pack.get("research") or {}).get("timeline") or []
     clips = db.q("""select * from assets where scene_id=%s and selected and kind='clip' and meta ? 'blurred_key'
                     order by tier='real' desc, created_at""", (s["id"],))
+    photos = db.q("""select * from assets where scene_id=%s and selected and kind='image' and storage_path is not null
+                     order by created_at""", (s["id"],))
     segs: list[compose.Segment] = []
     first = min(6.0, dur)
     segs.append(compose.Segment("image", cards.chapter_card(d / "chapter.png", s["idx"] + 1, s["chapter_title"] or s["title"],
                                                                c.project["selected_title"] or c.project["title"], seed=s["idx"]), first))
     remaining = dur - first
+    # Location map early in the video (scene 0), when the case has a place.
+    place = _case(c).get("location")
+    map_key = None
+    if s["idx"] == 0 and place and remaining > 10:
+        mp = maps.location_map(d / "map.png", place, kicker="WHERE IT HAPPENED", seed=s["idx"])
+        if mp:
+            take = min(9.0, remaining - 2)
+            segs.append(compose.Segment("image", mp, take, pan="right"))
+            remaining -= take
+            map_key = place
+    # Real footage first: up to ~70% of the scene, each clip up to 60 s, honouring the in/out points set on the desk.
+    budget = remaining * 0.7 if photos or s["on_screen_text"] else remaining
     for a in clips:
-        if remaining <= 2:
+        if remaining <= 2 or budget <= 2:
             break
         p = c.local(a["meta"]["blurred_key"])
-        take = min(remaining, max(4.0, min(20.0, duration(p))))
-        segs.append(compose.Segment("clip", p, take))
+        src_len = duration(p)
+        a_in = float(a["in_sec"] or 0)
+        a_out = float(a["out_sec"] or src_len)
+        avail = max(1.0, min(src_len, a_out) - a_in)
+        cap = 60.0 if a["tier"] == "real" else 20.0
+        take = min(remaining, budget, max(4.0, min(cap, avail)))
+        segs.append(compose.Segment("clip", p, take, in_sec=a_in))
+        remaining -= take
+        budget -= take
+    # Photos and documents from archives: slow zoom/pan, ~8 s each.
+    for i, a in enumerate(photos):
+        if remaining <= 4:
+            break
+        take = min(8.0, remaining - 2)
+        segs.append(compose.Segment("image", c.local(a["storage_path"]), take, pan="right" if i % 2 else "left"))
         remaining -= take
     # generated cards fill the rest, changing every ~16 s
     sentences = [x["text"] for x in (s["sentence_timings"] or [])]
@@ -296,8 +452,16 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
     total = sum(x.duration for x in segs)
     segs[-1].duration += dur - total
     h = sha(CARD_STYLE_VERSION, s["narration_hash"], dur, [str(x.path.name) for x in segs], [a["meta"]["blurred_key"] for a in clips],
+            [(str(a["in_sec"]), str(a["out_sec"])) for a in clips], [a["storage_path"] for a in photos], map_key,
             c.project["selected_title"], timeline)
     return segs, h
+
+
+def _case(c: Ctx) -> dict:
+    if not c.project["idea_id"]:
+        return {}
+    r = db.q1("select case_info from ideas where id=%s", (c.project["idea_id"],))
+    return (r or {}).get("case_info") or {}
 
 
 def stage_assemble(c: Ctx) -> None:
@@ -410,6 +574,8 @@ def credits(c: Ctx) -> str:
         if a["tier"] == "gap":
             continue
         out.append("- " + rights.edit_note(a))
+    if _case(c).get("location"):
+        out.append("- Maps: Natural Earth (public domain); geocoding © OpenStreetMap contributors (ODbL)")
     m = db.q1("select * from assets where project_id=%s and kind='music' and selected", (c.pid,))
     out.append(f"- Music: {m['title']} — {m['source_name']} ({m['license']})" if m else
                "- Music: ambient bed generated by the app (no third-party music)")
@@ -482,7 +648,9 @@ def run_stage(job: dict, hb: queue.Heartbeat) -> None:
     c = Ctx(job, hb)
     stage = job["stage"]
     db.x("update renders set status='running', stage=%s where id=%s", (stage, c.rid))
-    HANDLERS[stage](c)
+    if HANDLERS[stage](c) == "wait":
+        db.x("update renders set status='waiting_user', stage='footage_desk' where id=%s", (c.rid,))
+        return  # the user continues from the Footage Desk, which enqueues the next stage
     nxt = STAGES.index(stage) + 1
     if nxt < len(STAGES):
         queue.enqueue(user_id=c.uid, kind="render_stage", stage=STAGES[nxt], project_id=c.pid, render_id=c.rid,

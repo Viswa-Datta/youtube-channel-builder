@@ -18,12 +18,16 @@ const Req = z.discriminatedUnion("action", [
     confirm_not_sealed_or_leaked: z.literal(true),
   }),
   z.object({ action: z.literal("graphic"), graphic: z.boolean() }),
+  // Footage Desk: accept an item the app found, with the source and license it recorded; the user confirms.
+  z.object({ action: z.literal("approve_found"), confirm_rights_checked: z.literal(true), confirm_not_sealed_or_leaked: z.literal(true) }),
+  z.object({ action: z.literal("dismiss") }),
+  z.object({ action: z.literal("trim"), in_sec: z.number().min(0).nullable(), out_sec: z.number().min(0).nullable() }),
 ]);
 
 export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { sb, user } = await apiUser();
-  const a = await owned<{ id: string; tier: string; project_id: string; scene_id: string; kind: string }>(sb, "assets", id);
+  const a = await owned<{ id: string; tier: string; project_id: string; scene_id: string; kind: string; license: string; meta: Record<string, unknown> }>(sb, "assets", id);
   const b = await body(req, Req);
   let patch: Record<string, unknown> = {};
   if (b.action === "select") {
@@ -31,7 +35,14 @@ export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: st
     patch = { selected: true };
   } else if (b.action === "unselect") patch = { selected: false };
   else if (b.action === "graphic") patch = { graphic: b.graphic };
-  else {
+  else if (b.action === "approve_found") {
+    if (a.license === "Do Not Use") throw new HttpError(422, "This item is marked Do Not Use.");
+    patch = { rights_checked: true, rights_checked_by: user.id, rights_checked_at: new Date().toISOString(), selected: true };
+  } else if (b.action === "dismiss") patch = { selected: false, meta: { ...(a.meta ?? {}), dismissed: "1" } };
+  else if (b.action === "trim") {
+    if (b.in_sec !== null && b.out_sec !== null && b.out_sec <= b.in_sec) throw new HttpError(422, "End time must be after start time.");
+    patch = { in_sec: b.in_sec, out_sec: b.out_sec };
+  } else {
     if (b.verified_real && a.tier !== "real") throw new HttpError(422, "Only case footage can be marked verified real. Stock is always B-roll.");
     if (THIRD_PARTY.some((h) => b.source_url.toLowerCase().includes(h)))
       throw new HttpError(422, "That is a third-party video host. Link the original agency or court release, not a re-upload.");

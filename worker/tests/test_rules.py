@@ -146,7 +146,7 @@ def test_research_cannot_cite_unretrieved_sources(db, project, monkeypatch):
         {"claim": "b", "status": "confirmed", "source_refs": ["S99"]},
         {"claim": "c", "status": "unknown", "source_refs": []}]}
     monkeypatch.setitem(llm.PROVIDERS, "openai", lambda *a: (json.dumps(fake_research), 10, 10))
-    monkeypatch.setattr(core, "_retrieve", lambda p, q, fx: [{"title": "t", "url": "https://x.gov", "tier": "agency_release", "publisher": "x"}])
+    monkeypatch.setattr(core, "_retrieve", lambda p, q, fx, idea=None: [{"title": "t", "url": "https://x.gov", "tier": "agency_release", "publisher": "x"}])
     p = db.execute("select * from projects where id=%s", (project["project"],)).fetchone()
     with pytest.raises(core.BusinessRuleViolation, match="S99"):
         core.research(p, {"user_id": str(project["user"])}, "openai", "gpt-4o-mini", None)

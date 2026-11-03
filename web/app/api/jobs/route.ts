@@ -10,7 +10,7 @@ const Req = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("channel_kit_item"), tier: z.enum(["free", "standard", "premium"]), channel_id: z.string().uuid(), kit_id: z.string().uuid(),
     item: z.enum(["names", "handles", "description", "about", "pillars", "cadence", "banner_prompt", "profile_image_prompt", "trailer_idea"]) }),
   z.object({ kind: z.literal("ideas"), tier: z.enum(["free", "standard", "premium"]), channel_id: z.string().uuid(), count: z.number().int().min(20).max(30).default(25) }),
-  z.object({ kind: z.literal("production_pack"), tier: z.enum(["free", "standard", "premium"]), project_id: z.string().uuid(), scenes: z.number().int().min(3).max(14).default(7) }),
+  z.object({ kind: z.literal("production_pack"), tier: z.enum(["free", "standard", "premium"]), project_id: z.string().uuid(), scenes: z.number().int().min(3).max(16).optional() }),
 ]);
 
 export const POST = handler(async (req: Request) => {

@@ -30,7 +30,7 @@ export const POST = handler(async (req: Request) => {
   if (error) throw error;
   await sb.from("ideas").update({ status: "in_production" }).eq("id", idea.id);
   // The cost modal was accepted for the production pack, so start it now.
-  const { job } = await enqueueJob({ userId: user.id, kind: "production_pack", payload: { scenes: 7 }, action: "production_pack",
+  const { job } = await enqueueJob({ userId: user.id, kind: "production_pack", payload: {}, action: "production_pack",
     tier: b.tier, minutes: ch?.target_minutes ?? 12, projectId: data.id, idempotencyKey: `pack:${data.id}` });
   return NextResponse.json({ id: data.id, job });
 });

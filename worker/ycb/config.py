@@ -59,6 +59,7 @@ class Settings:
     pixabay_api_key: str | None = field(default_factory=lambda: _env("PIXABAY_API_KEY"))
     courtlistener_token: str | None = field(default_factory=lambda: _env("COURTLISTENER_TOKEN"))
     nara_api_key: str | None = field(default_factory=lambda: _env("NARA_API_KEY"))
+    youtube_api_key: str | None = field(default_factory=lambda: _env("YOUTUBE_API_KEY"))  # YouTube Data API key: search only
 
     # YouTube
     google_client_id: str | None = field(default_factory=lambda: _env("GOOGLE_OAUTH_CLIENT_ID"))
