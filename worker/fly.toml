@@ -1,7 +1,7 @@
 # Fly.io render worker. Deploy from the REPO ROOT (build context must include config/ and fixtures/):
 #   fly deploy --config worker/fly.toml --dockerfile worker/Dockerfile .
-app = "ycb-render-worker"
-primary_region = "iad"
+app = "ycb-worker-viswa"
+primary_region = "sea"   # near the Supabase project (us-west-2)
 
 [processes]
   worker = "python -m ycb.main worker"
@@ -14,4 +14,4 @@ primary_region = "iad"
 [mounts]
   source = "ycb_work"
   destination = "/work"
-  initial_size = "20gb"
+  initial_size = "10gb"

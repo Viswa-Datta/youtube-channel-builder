@@ -23,9 +23,8 @@ COPY fixtures fixtures
 COPY worker worker
 WORKDIR /app/worker
 
-# Non-root
-RUN useradd -m -u 10001 worker && mkdir -p /work && chown worker /work
-USER worker
+# Runs as root inside its own VM so it can write to the mounted /work volume (Fly mounts volumes root-owned).
+RUN mkdir -p /work
 
 HEALTHCHECK --interval=60s --timeout=10s CMD python -c "import ycb.main" || exit 1
 CMD ["python", "-m", "ycb.main", "worker"]
