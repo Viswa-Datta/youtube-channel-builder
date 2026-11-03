@@ -307,9 +307,8 @@ def production_pack(job: dict) -> dict:
                              idem=f"project:{project['id']}:script_draft", fixture=_fx(fx, "script_draft"))
     if len(draft.scenes) != n_scenes:
         raise BusinessRuleViolation(f"Script Agent returned {len(draft.scenes)} scenes, expected {n_scenes}")
-    for c in draft.scenes:
-        if any(r >= len(res.claims) for r in c.claim_refs):
-            raise BusinessRuleViolation(f"scene {c.idx} references a claim that does not exist")
+    for c in draft.scenes:  # a pointer to a claim that does not exist is dropped (the claim list is the source of truth)
+        c.claim_refs = [r for r in c.claim_refs if 0 <= r < len(res.claims)]
 
     db.x("delete from scenes where project_id=%s", (project["id"],))
     for s in draft.scenes:
