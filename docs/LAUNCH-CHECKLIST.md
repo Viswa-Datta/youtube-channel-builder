@@ -5,9 +5,9 @@ Legend: ✅ done and tested in the build environment · 🟡 built, not run here
 ## Build environment limits (read first)
 The build sandbox had **no access to npm or PyPI** (blocked by network policy) and **no accounts or API keys**. So:
 * The **worker, database and media pipeline were run and tested for real** here: Postgres 16, FFmpeg, Kokoro, YuNet, YOLO plates.
-* The **Next.js web app was written but never installed or built here.** It was type-checked only against stub
-  declarations of its dependencies. The first `npm install && npm run build` happens in CI or on Vercel. Expect to fix a few
-  compile errors there.
+* **Update 2026-11-03:** network access was enabled. The web app now installs, type-checks and builds for production
+  (`next build`, all routes), and GitHub CI passes for both web and worker. The UI has not yet been used against a live
+  Supabase project.
 * LLM steps for the test video used the **fixture provider** (pre-written JSON put through the same schema validation and
   pipeline). No LLM key was available, and the app refuses to invent output.
 
@@ -15,7 +15,7 @@ The build sandbox had **no access to npm or PyPI** (blocked by network policy) a
 - ✅ Repo structure, README with local setup, `.env.example` with every key named, no real keys committed
 - ✅ Shared `config/pricing.json` (prices verified 2026-11-02) and `config/plans.json` (Free/Creator/Pro as config)
 - ✅ CI workflow (`.github/workflows/ci.yml`): worker tests on Postgres, web typecheck + estimator parity + `next build`
-- 🟡 CI run on GitHub (push the repo; first web build will surface any type errors the stub check could not see)
+- ✅ Code on GitHub (Viswa-Datta/youtube-channel-builder); CI green: web typecheck + estimator parity + `next build`, worker tests
 
 ## Database (Supabase)
 - ✅ Migrations apply cleanly and re-apply idempotently on Postgres 16
