@@ -129,6 +129,35 @@ def check_env() -> dict:
     return out
 
 
+def check_storage() -> dict:
+    """Round-trip a tiny object through the configured storage driver (upload, exists, download, delete)."""
+    import tempfile
+    from pathlib import Path
+    from .config import settings
+    from .storage import store
+    res: dict = {"driver": settings.storage_driver}
+    key = "healthcheck/ycb-check.txt"
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "in.txt"
+            src.write_text("ok")
+            store().put(src, key, "text/plain")
+            res["upload"] = "ok"
+            res["exists"] = store().exists(key)
+            res["download"] = store().get(key, Path(d) / "out.txt").read_text() == "ok"
+            store().delete_prefix("healthcheck")
+            res["delete"] = not store().exists(key)
+        res["word"] = "ready" if res["exists"] and res["download"] and res["delete"] else "problem"
+    except Exception as e:  # noqa: BLE001 - report, never crash the CLI
+        msg = str(e)
+        for secret in (settings.r2_secret_access_key, settings.r2_access_key_id, settings.supabase_service_key):
+            if secret:
+                msg = msg.replace(secret, "[redacted]")
+        res["error"] = f"{type(e).__name__}: {msg[:300]}"
+        res["word"] = "problem"
+    return res
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "worker"
     if cmd == "worker":
@@ -140,6 +169,8 @@ if __name__ == "__main__":
     elif cmd == "check-llm":
         from .providers.llm import check_llm
         print(json.dumps(check_llm(), indent=2))
+    elif cmd == "check-storage":
+        print(json.dumps(check_storage(), indent=2))
     elif cmd == "once":
         while run_one():
             pass
