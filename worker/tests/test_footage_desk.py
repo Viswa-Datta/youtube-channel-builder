@@ -33,7 +33,7 @@ def setup(db, project, monkeypatch):
     yt = [Evidence("find_only", "YouTube", "Moab Police bodycam part 2", "https://www.youtube.com/watch?v=def", channel="Moab City Police",
                    official=True, published="2021-09-16", license="Public Record with release terms"),
           Evidence("find_only", "YouTube", "REACTION to bodycam", "https://www.youtube.com/watch?v=zzz", channel="Some Streamer", official=False)]
-    monkeypatch.setattr(discovery, "youtube", lambda q, n=8: yt if "Moab" in q else [])
+    monkeypatch.setattr(discovery, "youtube", lambda q, n=8, agency=None: yt if "Moab" in q else [])
     monkeypatch.setattr(discovery, "wikimedia_commons", lambda q, n=8, media="video": (
         [Evidence("downloadable", "Wikimedia Commons", "Grand Teton map", "https://commons.wikimedia.org/wiki/File:x.png",
                   media_url="https://upload.wikimedia.org/x.png", license="Public Domain", media_type="image")] if media == "image" else []))

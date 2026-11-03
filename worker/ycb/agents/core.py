@@ -85,7 +85,8 @@ def ideas(job: dict) -> dict:
     tier = p.get("tier", "standard")
     prov, model, fx = llm_choice(p, tier)
     ledger.ensure_within_cap(job["user_id"], pricing.estimate("ideas", tier)["total_usd"], "Ideas Agent")
-    existing = [r["title"] for r in db.q("select title from ideas where channel_id=%s", (ch["id"],))]
+    existing = [r["title"] for r in db.q("select title from ideas where channel_id=%s", (ch["id"],))] + \
+        [f"case: {r['c']}" for r in db.q("select distinct case_info->>'case_name' c from ideas where channel_id=%s and case_info ? 'case_name'", (ch["id"],))]
     user = (f"Channel: {json.dumps((kit or {}).get('selected') or {})}\nNiche: {ch['niche']} / {ch['sub_niche'] or ''}\n"
             f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
             f"Already have (do not repeat): {json.dumps(existing[:80])}")
@@ -93,6 +94,17 @@ def ideas(job: dict) -> dict:
                              user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
     est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
     n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
+    # One idea per case: drop repeats of the same case (keep the first) and cases already on the board.
+    seen = {(r["case_info"] or {}).get("case_name", "").strip().lower()
+            for r in db.q("select case_info from ideas where channel_id=%s", (ch["id"],))} - {""}
+    uniq = []
+    for i in batch.ideas:
+        k = (i.case_name or "").strip().lower()
+        if k and k in seen:
+            continue
+        seen.add(k)
+        uniq.append(i)
+    batch.ideas = uniq
     probes = probe_ideas(batch.ideas) if not fx else {}
     rows = []
     for k, i in enumerate(batch.ideas):
@@ -110,7 +122,8 @@ def ideas(job: dict) -> dict:
                                    "case_status": i.case_status, "public_footage": i.public_footage,
                                    "search_terms": i.search_terms,
                                    "reference": (pr or {}).get("reference"),
-                                   "youtube_checked": (pr or {}).get("youtube_checked")}.items() if v not in (None, [], "")}
+                                   "youtube_checked": (pr or {}).get("youtube_checked"),
+                                   "youtube_error": (pr or {}).get("youtube_error")}.items() if v not in (None, [], "")}
         db.x("""insert into ideas (channel_id, batch, title, hook, angle, pillar, demand_score, competition_score,
                 feasibility_score, est_cost_usd, rank_score, position, rationale, case_info, footage_evidence, case_verified)
                 values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",

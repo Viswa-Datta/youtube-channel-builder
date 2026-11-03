@@ -24,8 +24,12 @@ real, documented case, and you must fill case_name (the name it is commonly repo
 ("City, State"), year, agency (the investigating agency), case_status, public_footage (the kinds of footage you
 believe were officially released, e.g. "bodycam released by the agency", "interrogation video entered at trial",
 "court TV of the sentencing") and 1-3 search_terms that would find the agency's own release
-(e.g. "Phoenix Police critical incident briefing 2019"). Strongly prefer cases where the agency itself published
-bodycam/dashcam/interview video or where trial video is public. Only propose cases you are confident are real;
+(e.g. "Phoenix Police critical incident briefing 2019"). FOOTAGE IS THE PRIORITY: strongly prefer US cases from
+2015 onward where the police or sheriff's department itself published the video — "critical incident community
+briefing" videos, bodycam/dashcam releases, or interview footage posted on the agency's own YouTube channel or
+transparency page (many large departments do this, e.g. LAPD, Phoenix PD, Las Vegas Metro, Denver PD, San Diego PD,
+Florida sheriffs' offices) — or cases whose trial was broadcast in full. Older or non-US cases are fine only when
+such official video is known to exist. Every idea must be a DIFFERENT case; never repeat a case, even with a new angle. Only propose cases you are confident are real;
 never invent a case, name, place or date — the app checks every case against reference sources and drops ones
 it cannot confirm. Prefer resolved cases (convicted/acquitted/closed); avoid minors as subjects, sealed records,
 and ongoing trials. Do not invent case facts in the hook; phrase uncertain details as questions.

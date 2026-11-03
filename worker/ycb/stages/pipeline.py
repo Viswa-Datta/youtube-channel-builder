@@ -202,7 +202,7 @@ def stage_footage(c: Ctx) -> str | None:
                 if n["tier"] == "real":
                     if yt_count < MAX_YT_REQUESTS:
                         yq = q if not agency or agency.lower() in q.lower() else f"{agency} {q}"
-                        for e in discovery.youtube(yq, 6):
+                        for e in discovery.youtube(yq, 6, agency):
                             if e.official and discovery.FOOTAGE_RE.search(e.title) and yt_count < MAX_YT_REQUESTS:
                                 if _help(c, s, "save_clip", e.title, _yt_instructions(e.dict()), source_url=e.url, source_name="YouTube",
                                          agency=e.channel, release_date=e.published, license_hint="Public Record with release terms",

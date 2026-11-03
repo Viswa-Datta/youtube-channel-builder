@@ -20,7 +20,7 @@ from ..config import settings
 from .rights import suggest_license
 
 UA = {"User-Agent": "YouTubeChannelBuilder/1.0 (https://youtube-channel-builder.vercel.app; footage research)"}
-AGENCY_RE = re.compile(r"\b(police|sheriff|pd|department|dept|county|city of|district attorney|attorney general|"
+AGENCY_RE = re.compile(r"\b(police|sheriff|[a-z]{0,4}pd|department|dept|county|city of|district attorney|attorney general|"
                        r"state patrol|highway patrol|marshal|court|courts|prosecutor|public safety|bureau of investigation|fbi|"
                        r"doj|department of justice)\b", re.I)
 FOOTAGE_RE = re.compile(r"body[\s-]?cam|bodycam|body[\s-]?worn|dash[\s-]?cam|critical incident|surveillance|"
@@ -47,6 +47,7 @@ class Evidence:
 
 
 _wm_lock = __import__("threading").Lock()
+LAST_ERRORS: dict[str, str] = {}  # most recent API error per source (shown by `check-footage`, stored on ideas)
 
 
 def _get(url: str, **kw) -> requests.Response | None:
@@ -114,6 +115,14 @@ def wikipedia_sections(title: str, max_chars: int = 14000) -> list[dict]:
     return out
 
 
+def _agency_match(agency: str, channel: str) -> bool:
+    """Channel title carries the agency's distinctive name, e.g. 'Phoenix Police Department' vs 'PhoenixPolice'."""
+    generic = {"police", "department", "dept", "county", "sheriff", "office", "city", "state", "of", "the", "regional", "service"}
+    key = [w for w in re.findall(r"[a-z0-9]+", agency.lower()) if w not in generic and len(w) > 2]
+    flat = re.sub(r"[^a-z0-9]", "", channel.lower())
+    return bool(key) and all(w in flat for w in key) and bool(re.search(r"police|sheriff|pd|county|city|state|patrol", channel, re.I))
+
+
 def _words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 2 and w not in {"the", "and", "case", "murder", "killing", "death", "shooting"}}
 
@@ -131,19 +140,31 @@ def case_confirmed(case_name: str, location: str | None, refs: list[Evidence]) -
 
 
 # ---------------------------------------------------------------- find-only: YouTube (official agency uploads)
-def youtube(query: str, n: int = 8) -> list[Evidence]:
+def youtube(query: str, n: int = 8, agency: str | None = None) -> list[Evidence]:
     if not settings.youtube_api_key:
         return []
-    r = _get("https://www.googleapis.com/youtube/v3/search", headers={"x-goog-api-key": settings.youtube_api_key},
-             params={"part": "snippet", "q": query, "type": "video", "maxResults": n, "videoDuration": "any", "safeSearch": "none"})
+    try:
+        r = requests.get("https://www.googleapis.com/youtube/v3/search", headers={**UA, "x-goog-api-key": settings.youtube_api_key},
+                         params={"part": "snippet", "q": query, "type": "video", "maxResults": n, "safeSearch": "none"}, timeout=25)
+    except requests.RequestException as e:
+        LAST_ERRORS["youtube"] = f"network: {type(e).__name__}"
+        return []
+    if not r.ok:
+        try:
+            msg = r.json().get("error", {}).get("message", "")[:200]
+        except ValueError:
+            msg = r.text[:200]
+        LAST_ERRORS["youtube"] = f"HTTP {r.status_code}: {msg}".replace(settings.youtube_api_key, "[redacted]")
+        return []
+    LAST_ERRORS.pop("youtube", None)
     out = []
-    for it in (r.json().get("items", []) if r else []):
+    for it in r.json().get("items", []):
         sn = it.get("snippet", {})
         vid = it.get("id", {}).get("videoId")
         if not vid:
             continue
         ch = sn.get("channelTitle", "")
-        official = bool(AGENCY_RE.search(ch))
+        official = bool(AGENCY_RE.search(ch)) or bool(agency and _agency_match(agency, ch))
         note = ("Posted by what appears to be the agency's own channel. The app cannot download from YouTube: "
                 "save the original yourself and check the agency's release terms." if official else
                 "Third-party upload: do not use. Find the agency's original release instead.")
@@ -213,15 +234,17 @@ def probe_case(case_name: str, location: str | None, agency: str | None, search_
         yt_q = f"{agency} {yt_q}"
     with ThreadPoolExecutor(4) as ex:
         f_wiki = ex.submit(wikipedia, base)
-        f_yt = ex.submit(youtube, yt_q, 8)
+        f_yt = ex.submit(youtube, yt_q, 8, agency)
         f_ia = ex.submit(internet_archive, case_name, 4)
         f_wc = ex.submit(wikimedia_commons, case_name, 4, "image")
         refs, yt, ia, wc = f_wiki.result(), f_yt.result(), f_ia.result(), f_wc.result()
     ref = case_confirmed(case_name, location, refs)
     name_words = _words(case_name)
 
-    def relevant(e: Evidence) -> bool:
-        return len(name_words & _words(e.title)) >= 1
+    need = min(2, len(name_words))
+
+    def relevant(e: Evidence) -> bool:  # every distinctive word of a 1-2 word name, at least 2 of a longer one
+        return len(name_words & _words(e.title + " " + (e.meta.get("snippet") or ""))) >= need
 
     official_video = [e for e in yt if e.official and relevant(e) and FOOTAGE_RE.search(e.title)]
     other_yt = [e for e in yt if relevant(e) and e not in official_video][:3]
@@ -240,4 +263,5 @@ def probe_case(case_name: str, location: str | None, agency: str | None, search_
         score = min(score, 2)  # nothing confirms the case exists: keep it at the bottom
     evidence = [e.dict() for e in (official_video[:4] + archive[:3] + images[:3] + other_yt)]
     return {"verified": bool(ref), "reference": ref.dict() if ref else None, "evidence": evidence,
-            "feasibility": min(10, score), "youtube_checked": bool(settings.youtube_api_key)}
+            "feasibility": min(10, score), "youtube_checked": bool(settings.youtube_api_key) and "youtube" not in LAST_ERRORS,
+            "youtube_error": LAST_ERRORS.get("youtube"), "youtube_results": len(yt)}

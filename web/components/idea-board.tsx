@@ -12,7 +12,7 @@ type Idea = {
   id: string; title: string; hook: string; angle: string; pillar: string | null; demand_score: number; competition_score: number;
   feasibility_score: number; est_cost_usd: number; rank_score: number; status: string; rationale: string | null;
   case_info?: { case_name?: string; location?: string; year?: number; agency?: string; case_status?: string;
-    public_footage?: string[]; reference?: { title: string; url: string } | null; youtube_checked?: boolean } | null;
+    public_footage?: string[]; reference?: { title: string; url: string } | null; youtube_checked?: boolean; youtube_error?: string } | null;
   footage_evidence?: { kind: string; source: string; title: string; url: string; official?: boolean; channel?: string | null; media_type?: string }[] | null;
   case_verified?: boolean;
 };
@@ -34,7 +34,8 @@ function CaseDetails({ i }: { i: Idea }) {
           : <Badge variant="danger">Not confirmed</Badge>}
         {official > 0 && <Badge variant="success">{official} official video{official > 1 ? "s" : ""}</Badge>}
         {files > 0 && <Badge variant="secondary">{files} free file{files > 1 ? "s" : ""}</Badge>}
-        {c.youtube_checked === false && <Badge variant="outline">YouTube not searched</Badge>}
+        {c.youtube_error ? <Badge variant="danger" title={c.youtube_error}>YouTube search failed</Badge>
+          : c.youtube_checked === false && <Badge variant="outline">YouTube not searched</Badge>}
       </div>
       {ev.length > 0 && (
         <details>

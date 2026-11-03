@@ -169,6 +169,14 @@ if __name__ == "__main__":
     elif cmd == "check-llm":
         from .providers.llm import check_llm
         print(json.dumps(check_llm(), indent=2))
+    elif cmd == "check-footage":
+        from .footage import discovery
+        q = " ".join(sys.argv[2:]) or "Phoenix Police critical incident bodycam"
+        res = discovery.youtube(q, 8)
+        print(json.dumps({"query": q, "youtube_key_set": bool(settings.youtube_api_key) if (settings := __import__("ycb.config", fromlist=["settings"]).settings) else False,
+                          "youtube_error": discovery.LAST_ERRORS.get("youtube"), "results": len(res),
+                          "official": [f"{e.channel} | {e.title[:70]}" for e in res if e.official],
+                          "other": [f"{e.channel} | {e.title[:70]}" for e in res if not e.official]}, indent=2))
     elif cmd == "check-storage":
         print(json.dumps(check_storage(), indent=2))
     elif cmd == "once":
