@@ -221,10 +221,13 @@ def research(project: dict, job: dict, prov: str, model: str, fx: str | None) ->
             f"{n_claims}-{2 * n_claims} specific, dated factual claims covering the whole story in order (background, the "
             f"incident, the investigation, official statements, legal proceedings, outcomes, aftermath), and a detailed "
             f"timeline (one entry per dated event, 'YYYY-MM-DD: event').\n\nRETRIEVED SOURCES:\n")
-    user = user + ("\n\n".join(listing) or "(none)")
-    res, _ = complete_json(out=Research, agent="research", provider=prov, model=model, system=prompts.RESEARCH, user=user,
-                           user_id=job["user_id"], project_id=project["id"], idem=f"project:{project['id']}:research",
-                           fixture=_fx(fx, "research"))
+    if fx or len(listing) <= 6:
+        user = user + ("\n\n".join(listing) or "(none)")
+        res, _ = complete_json(out=Research, agent="research", provider=prov, model=model, system=prompts.RESEARCH, user=user,
+                               user_id=job["user_id"], project_id=project["id"], idem=f"project:{project['id']}:research",
+                               fixture=_fx(fx, "research"))
+    else:
+        res = _research_in_batches(project, job, prov, model, user, listing)
     valid_refs = {s["ref"] for s in retrieved}
     for c in res.claims:
         bad = [r for r in c.source_refs if r not in valid_refs]
@@ -235,6 +238,44 @@ def research(project: dict, job: dict, prov: str, model: str, fx: str | None) ->
         db.x("insert into research_claims (project_id, scene_idx, claim, status, source_refs, note) values (%s,%s,%s,%s,%s,%s)",
              (project["id"], c.scene_idx, c.claim, c.status, c.source_refs, c.note))
     return res
+
+
+def _research_in_batches(project: dict, job: dict, prov: str, model: str, header: str, listing: list[str]) -> Research:
+    """Read the sources ~5 at a time so every section yields its facts (one big call summarises too much),
+    then merge: claims de-duplicated in story order, timeline de-duplicated and sorted by date."""
+    batches = [listing[i:i + 5] for i in range(0, len(listing), 5)]
+    parts: list[Research] = []
+    for b, chunk in enumerate(batches):
+        ask = (header.split("RETRIEVED SOURCES:")[0] +
+               f"BATCH {b + 1} of {len(batches)}: extract EVERY specific fact these sources support (aim for 8-20 claims), "
+               "citing only the refs shown below. Include dated timeline entries found in these sources.\n\n"
+               "RETRIEVED SOURCES:\n" + "\n\n".join(chunk))
+        for attempt in range(2):
+            try:
+                r, _ = complete_json(out=Research, agent="research", provider=prov, model=model, system=prompts.RESEARCH,
+                                     user=ask, user_id=job["user_id"], project_id=project["id"],
+                                     idem=f"project:{project['id']}:research:{b}:{attempt}")
+                parts.append(r)
+                break
+            except Exception:  # noqa: BLE001 - retry this batch once, then move on
+                continue
+    if not parts:
+        raise BusinessRuleViolation("Research Agent failed on every batch of sources")
+    seen, claims = set(), []
+    for r in parts:
+        for c in r.claims:
+            k = re.sub(r"\W+", " ", c.claim.lower()).strip()
+            if k not in seen:
+                seen.add(k)
+                claims.append(c)
+    tl = list(dict.fromkeys(t for r in parts for t in r.timeline))
+    tl.sort(key=lambda t: (t[:10] if re.match(r"\d{4}-\d{2}-\d{2}", t) else "9999"))
+    uniq = lambda xs: list(dict.fromkeys(xs))  # noqa: E731
+    return Research(summary=parts[0].summary, timeline=tl, claims=claims[:150],
+                    disclaimers=uniq(d for r in parts for d in r.disclaimers),
+                    sensitive_topics=uniq(t for r in parts for t in r.sensitive_topics),
+                    fact_check_notes=uniq(n for r in parts for n in r.fact_check_notes)[:30],
+                    gaps=uniq(g for r in parts for g in r.gaps)[:30])
 
 
 def _date(s: str | None):
