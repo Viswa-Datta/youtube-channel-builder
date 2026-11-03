@@ -166,10 +166,20 @@ def _retrieve(project: dict, query: str, fixture_set: str | None, idea: dict | N
             found.append({"title": e["title"], "url": e["url"], "publisher": e.get("channel") or e["source"],
                           "published_at": e.get("published"), "tier": "agency_release", "provider": e["source"].lower(),
                           "excerpt": "Official release found by the footage check (video; content not transcribed)."})
-    # The case's reference article, section by section.
+    # The case's own reference articles (title must name the case), section by section: main article in full,
+    # up to two related articles (e.g. the trial) more briefly.
+    titles: list[str] = []
+    if case.get("case_name"):
+        try:
+            titles = [e.title for e in discovery.case_articles(case["case_name"], discovery.wikipedia(case["case_name"], 6))]
+        except Exception:  # noqa: BLE001
+            titles = []
     ref = case.get("reference") or {}
-    if ref.get("title"):
-        for sec in discovery.wikipedia_sections(ref["title"]):
+    if ref.get("title") and ref["title"] in titles:
+        titles.remove(ref["title"])
+        titles.insert(0, ref["title"])
+    for k, t in enumerate(titles[:3]):
+        for sec in discovery.wikipedia_sections(t, max_chars=30000 if k == 0 else 8000, excerpt_chars=3500 if k == 0 else 1800):
             found.append({**sec, "tier": "reference", "provider": "wikipedia"})
     def safe(fn, *a, **k):  # one slow or broken source never stops the research
         try:
@@ -186,7 +196,7 @@ def _retrieve(project: dict, query: str, fixture_set: str | None, idea: dict | N
         found.append({"title": c.title, "url": c.source_url, "publisher": "Library of Congress",
                       "published_at": c.release_date, "tier": "reference", "provider": "loc", "excerpt": ""})
     found.sort(key=lambda s: TIER_ORDER[s["tier"]])
-    return found[:45]
+    return found[:60]
 
 
 def research(project: dict, job: dict, prov: str, model: str, fx: str | None) -> Research:
@@ -205,8 +215,12 @@ def research(project: dict, job: dict, prov: str, model: str, fx: str | None) ->
               _date(s.get("published_at")), s.get("provider", "fixture"), s.get("excerpt")))
         listing.append(f"[{ref}] ({s['tier']}) {s['title']} — {s.get('publisher') or ''} {s.get('published_at') or ''}\n{s.get('excerpt') or ''}")
     case_line = " · ".join(str(case[k]) for k in ("case_name", "location", "year", "agency", "case_status") if case.get(k))
+    n_claims = max(20, int(project["target_minutes"]))
     user = (f"Topic: {(idea or {}).get('title') or project['title']}\nCase: {case_line or '-'}\n"
-            f"Angle: {(idea or {}).get('angle', '')}\n\nRETRIEVED SOURCES:\n")
+            f"Angle: {(idea or {}).get('angle', '')}\nThis is a {project['target_minutes']}-minute documentary: extract "
+            f"{n_claims}-{2 * n_claims} specific, dated factual claims covering the whole story in order (background, the "
+            f"incident, the investigation, official statements, legal proceedings, outcomes, aftermath), and a detailed "
+            f"timeline (one entry per dated event, 'YYYY-MM-DD: event').\n\nRETRIEVED SOURCES:\n")
     user = user + ("\n\n".join(listing) or "(none)")
     res, _ = complete_json(out=Research, agent="research", provider=prov, model=model, system=prompts.RESEARCH, user=user,
                            user_id=job["user_id"], project_id=project["id"], idem=f"project:{project['id']}:research",

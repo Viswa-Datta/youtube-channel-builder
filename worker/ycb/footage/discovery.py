@@ -99,7 +99,7 @@ def wikipedia(query: str, n: int = 3) -> list[Evidence]:
     return out
 
 
-def wikipedia_sections(title: str, max_chars: int = 14000) -> list[dict]:
+def wikipedia_sections(title: str, max_chars: int = 14000, excerpt_chars: int = 1800) -> list[dict]:
     """Plain-text sections of one Wikipedia article (for research). Each section becomes a citable source."""
     r = _get("https://en.wikipedia.org/w/api.php", params={"action": "query", "prop": "extracts", "explaintext": 1,
                                                            "titles": title, "format": "json", "redirects": 1})
@@ -120,7 +120,7 @@ def wikipedia_sections(title: str, max_chars: int = 14000) -> list[dict]:
             break
         used += len(body)
         out.append({"title": f"{title} — {h}", "url": url + ("" if h == "Summary" else "#" + h.replace(" ", "_")),
-                    "publisher": "Wikipedia", "published_at": None, "excerpt": body[:1800]})
+                    "publisher": "Wikipedia", "published_at": None, "excerpt": body[:excerpt_chars]})
     return out
 
 
@@ -136,16 +136,19 @@ def _words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 2 and w not in {"the", "and", "case", "murder", "killing", "death", "shooting"}}
 
 
-def case_confirmed(case_name: str, location: str | None, refs: list[Evidence]) -> Evidence | None:
-    """A Wikipedia hit counts only if its title/snippet shares most of the case name's distinctive words."""
+def case_articles(case_name: str, refs: list[Evidence]) -> list[Evidence]:
+    """Wikipedia hits whose TITLE carries the case name (e.g. 'Killing of Elijah McClain'), best first.
+    A city or general article that merely mentions the case is never treated as the case's article."""
     want = _words(case_name)
     if not want:
-        return None
-    for e in refs:
-        have = _words(e.title + " " + e.meta.get("snippet", ""))
-        if len(want & have) >= max(1, round(0.6 * len(want))):
-            return e
-    return None
+        return []
+    need = len(want) if len(want) <= 2 else max(2, round(0.6 * len(want)))
+    return [e for e in refs if len(want & _words(e.title)) >= need]
+
+
+def case_confirmed(case_name: str, location: str | None, refs: list[Evidence]) -> Evidence | None:
+    hits = case_articles(case_name, refs)
+    return hits[0] if hits else None
 
 
 # ---------------------------------------------------------------- find-only: YouTube (official agency uploads)
@@ -239,7 +242,7 @@ def internet_archive(query: str, n: int = 6) -> list[Evidence]:
 def probe_case(case_name: str, location: str | None, agency: str | None, search_terms: list[str]) -> dict:
     """Check one proposed case: does it exist, and what public footage can actually be found?
     Returns {"verified": bool, "reference": {...}|None, "evidence": [...], "feasibility": 0-10}."""
-    base = " ".join(x for x in [case_name, location] if x)
+    base = case_name
     yt_q = (search_terms[0] if search_terms else f"{case_name} bodycam")
     if agency and agency.lower() not in yt_q.lower():
         yt_q = f"{agency} {yt_q}"
