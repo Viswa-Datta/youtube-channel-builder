@@ -41,6 +41,11 @@ export async function enqueueJob(opts: {
     .select()
     .maybeSingle();
   if (error) throw error;
+  if (!data && opts.idempotencyKey) {
+    // already enqueued (double click / retry): return the existing job instead of nothing
+    const { data: existing } = await admin.from("jobs").select("*").eq("idempotency_key", opts.idempotencyKey).single();
+    return { job: existing, estimate: est };
+  }
   return { job: data, estimate: est };
 }
 

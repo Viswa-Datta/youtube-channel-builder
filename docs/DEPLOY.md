@@ -35,7 +35,7 @@ Railway / VPS: build `worker/Dockerfile` with the repo root as context, set the 
 Scale horizontally by running more workers; `FOR UPDATE SKIP LOCKED` makes claims safe, and a crashed worker's lease
 expires after `JOB_LEASE_SECONDS` so another worker resumes the job.
 
-A 30-minute video on a shared-cpu-4x machine: voice (Kokoro, free) is the slow step, roughly real-time on 4 vCPU;
+Measured on 2 vCPU: Kokoro voices about real time (30 min of narration ≈ 29 min) and the final caption burn-in takes ~15–20 min;
 paid TTS providers are much faster. Use `performance-4x` for faster free renders.
 
 ## 4. End-to-end check on the deployed app

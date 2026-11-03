@@ -62,8 +62,9 @@ visuals. v3 is the delivered video.
 6. The thumbnail headline overlapped the case-file graphic; the headline now uses the largest size that fits in 3 lines.
 
 ## Known limitations
-* Kokoro on 2 vCPU voices about 1 minute of audio per 1.1–2 minutes of wall time; the whole 30-min render took about 90 min
-  (incl. two failed assemble attempts). A 4-vCPU worker or a paid TTS provider is several times faster.
+* Timing on 2 vCPU: voice stage 28.6 min for 30.2 min of audio (Kokoro ≈ real time); assemble about 20 min (mostly the final
+  re-encode that burns in captions). The first full render took 90.5 min end to end because assemble failed twice on the
+  tremolo bug before succeeding. A 4-vCPU worker or a paid TTS provider is several times faster.
 * The narration was written in this session (fixture), not by the app's Script Agent; the first real run with an LLM key is
   the true test of script quality.
 * No real footage could be fetched here, so the test video is documents/cards plus generated ambient music; real archive
