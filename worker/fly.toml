@@ -1,7 +1,7 @@
 # Fly.io render worker. Deploy from the REPO ROOT (build context must include config/ and fixtures/):
 #   fly deploy --config worker/fly.toml --dockerfile worker/Dockerfile .
 app = "ycb-worker-viswa"
-primary_region = "sea"   # near the Supabase project (us-west-2)
+primary_region = "sjc"   # near the Supabase project (us-west-2)
 
 [processes]
   worker = "python -m ycb.main worker"
