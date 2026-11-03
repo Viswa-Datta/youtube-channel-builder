@@ -24,11 +24,16 @@ class Settings:
     work_dir: Path = field(default_factory=lambda: Path(_env("WORK_DIR", "/tmp/ycb-work")))
 
     # storage
-    storage_driver: str = field(default_factory=lambda: _env("STORAGE_DRIVER", "local"))  # local | supabase
+    storage_driver: str = field(default_factory=lambda: _env("STORAGE_DRIVER", "local"))  # local | supabase | r2
     local_storage_dir: Path = field(default_factory=lambda: Path(_env("LOCAL_STORAGE_DIR", str(REPO_ROOT / ".storage"))))
     supabase_url: str | None = field(default_factory=lambda: _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL"))
     supabase_service_key: str | None = field(default_factory=lambda: _env("SUPABASE_SERVICE_ROLE_KEY"))
     storage_bucket: str = field(default_factory=lambda: _env("STORAGE_BUCKET", "projects"))
+    r2_account_id: str | None = field(default_factory=lambda: _env("R2_ACCOUNT_ID"))
+    r2_access_key_id: str | None = field(default_factory=lambda: _env("R2_ACCESS_KEY_ID"))
+    r2_secret_access_key: str | None = field(default_factory=lambda: _env("R2_SECRET_ACCESS_KEY"))
+    r2_bucket: str = field(default_factory=lambda: _env("R2_BUCKET", "ycb-media"))
+    r2_endpoint: str | None = field(default_factory=lambda: _env("R2_ENDPOINT"))  # tests only; default derives from the account id
 
     # LLM providers
     openai_api_key: str | None = field(default_factory=lambda: _env("OPENAI_API_KEY"))
@@ -71,6 +76,7 @@ class Settings:
             "pexels": ["PEXELS_API_KEY"], "pixabay": ["PIXABAY_API_KEY"],
             "youtube": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "TOKEN_ENCRYPTION_KEY"],
             "supabase": ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+            "r2": ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"],
         }.get(provider, [])
         env_map = {
             "OPENAI_API_KEY": self.openai_api_key, "ANTHROPIC_API_KEY": self.anthropic_api_key,
@@ -80,6 +86,8 @@ class Settings:
             "GOOGLE_OAUTH_CLIENT_ID": self.google_client_id, "GOOGLE_OAUTH_CLIENT_SECRET": self.google_client_secret,
             "TOKEN_ENCRYPTION_KEY": self.token_encryption_key, "SUPABASE_URL": self.supabase_url,
             "SUPABASE_SERVICE_ROLE_KEY": self.supabase_service_key,
+            "R2_ACCOUNT_ID": self.r2_account_id, "R2_ACCESS_KEY_ID": self.r2_access_key_id,
+            "R2_SECRET_ACCESS_KEY": self.r2_secret_access_key,
         }
         return [n for n in need if not env_map.get(n)]
 

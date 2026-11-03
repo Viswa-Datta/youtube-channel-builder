@@ -2,8 +2,8 @@
     projects/<project_id>/audio/scene-<n>.wav|mp3
     projects/<project_id>/clips/scene-<n>.mp4
     projects/<project_id>/renders/v-<n>.mp4, thumb-v-<n>.jpg, captions.srt
-Local driver for development/tests; Supabase Storage REST for production (R2 works via the same paths
-if you swap the driver for an S3 client).
+Drivers: local (development/tests), supabase (Supabase Storage; free plan caps files at 50 MB),
+r2 (Cloudflare R2 via its S3 API; no practical file-size limit, free egress; recommended for long videos).
 """
 from __future__ import annotations
 
@@ -111,11 +111,57 @@ class SupabaseStorage:
             requests.delete(f"{self.base}/object/{self.bucket}", headers=self.h, json={"prefixes": names}, timeout=60)
 
 
+class R2Storage:
+    """Cloudflare R2 through the S3 API. boto3 handles multipart uploads (multi-GB renders) and retries."""
+
+    def __init__(self) -> None:
+        require("r2")
+        import boto3
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+        self.bucket = settings.r2_bucket
+        self.s3 = boto3.client(
+            "s3", endpoint_url=settings.r2_endpoint or f"https://{settings.r2_account_id}.r2.cloudflarestorage.com", region_name="auto",
+            aws_access_key_id=settings.r2_access_key_id, aws_secret_access_key=settings.r2_secret_access_key,
+            config=Config(retries={"max_attempts": 8, "mode": "adaptive"}, signature_version="s3v4"))
+        self.tc = TransferConfig(multipart_threshold=64 << 20, multipart_chunksize=64 << 20, max_concurrency=4)
+
+    def put(self, local: Path, key: str, content_type: str | None = None) -> str:
+        self.s3.upload_file(str(local), self.bucket, key, Config=self.tc,
+                            ExtraArgs={"ContentType": content_type or "application/octet-stream"})
+        return key
+
+    def get(self, key: str, local: Path) -> Path:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        tmp = local.with_suffix(local.suffix + ".part")
+        self.s3.download_file(self.bucket, key, str(tmp), Config=self.tc)
+        os.replace(tmp, local)
+        return local
+
+    def exists(self, key: str) -> bool:
+        from botocore.exceptions import ClientError
+        try:
+            self.s3.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+
+    def delete_prefix(self, prefix: str) -> None:
+        pages = self.s3.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=prefix.rstrip("/") + "/")
+        for page in pages:
+            objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+            if objs:
+                self.s3.delete_objects(Bucket=self.bucket, Delete={"Objects": objs, "Quiet": True})
+
+
 _store = None
 
 
 def store():
     global _store
     if _store is None:
-        _store = SupabaseStorage() if settings.storage_driver == "supabase" else LocalStorage(settings.local_storage_dir)
+        d = settings.storage_driver
+        _store = R2Storage() if d == "r2" else SupabaseStorage() if d == "supabase" else LocalStorage(settings.local_storage_dir)
     return _store

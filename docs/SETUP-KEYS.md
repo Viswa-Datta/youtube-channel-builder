@@ -7,6 +7,7 @@ to list what is missing.
 | Variable | Needed for | Free path | Where to get it |
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Database, auth, storage | Supabase free plan | supabase.com → New project → Settings → API |
+| `STORAGE_DRIVER=r2`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (web **and** worker) | Video/audio/thumbnail storage with no file-size cap and free downloads | Cloudflare R2 free tier: 10 GB stored, egress free (payment method required to enable) | dash.cloudflare.com → R2 → Create bucket `ycb-media` (Standard) → Manage API tokens → Object Read & Write, this bucket only |
 | `DATABASE_URL` | Worker → Postgres (queue, ledger) | same project | Supabase → Connect → **Session pooler** string (port 5432) |
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET` | Connecting YouTube | free | docs/GOOGLE-CLOUD-SETUP.md |
 | `TOKEN_ENCRYPTION_KEY` | Encrypting YouTube tokens | — | `openssl rand -base64 32`, same in web and worker |

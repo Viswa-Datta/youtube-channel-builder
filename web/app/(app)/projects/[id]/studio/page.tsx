@@ -22,7 +22,7 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
   const name = (p.selected_title ?? p.title).replace(/[^\w]+/g, "-").slice(0, 60);
   const studioScenes: StudioScene[] = (scenes ?? []).map((s) => ({ ...s, start_sec: Number(s.start_sec ?? 0), audio_duration_sec: Number(s.audio_duration_sec ?? 0),
     assets: (assets ?? []).filter((a) => a.scene_id === s.id) }));
-  const vtt = await signedUrl(render.srt_path?.replace(/\.srt$/, ".vtt"));
+  const vtt = render.srt_path ? `/api/captions/${render.id}` : null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-3">
