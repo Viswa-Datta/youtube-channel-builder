@@ -1,0 +1,25 @@
+{
+ "needs": [
+  {"scene_idx": 0, "priority": 2, "tier": "news_document", "description": "Case-file documents on camera (blank evidence forms, archival report pages with no personal data)", "search_query": "police report form blank archival", "source_hint": "Library of Congress; agency records-request portal templates", "blur_notes": "Redact any names, addresses or numbers on forms."},
+  {"scene_idx": 0, "priority": 3, "tier": "stock_broll", "description": "Generic street at night, no identifiable people or plates", "search_query": "empty city street at night", "source_hint": "Pexels / Pixabay", "blur_notes": "Blur any plates or house numbers."},
+  {"scene_idx": 1, "priority": 1, "tier": "real", "description": "Public-domain archival footage of a crime laboratory or DNA analysis from a federal source", "search_query": "FBI laboratory DNA analysis", "source_hint": "US National Archives catalog (moving images); FBI public video releases", "blur_notes": "Blur lab staff faces unless they are official spokespeople in a press release."},
+  {"scene_idx": 1, "priority": 3, "tier": "stock_broll", "description": "Generic archive boxes and file folders", "search_query": "archive boxes files shelf", "source_hint": "Pexels / Pixabay", "blur_notes": ""},
+  {"scene_idx": 2, "priority": 1, "tier": "real", "description": "Officially released body-worn camera policy briefing or training video from a police agency (no incident footage)", "search_query": "body worn camera policy training video police department", "source_hint": "Agency transparency portals; BJA Body-Worn Camera Toolkit", "blur_notes": "Blur bystanders, plates, house numbers, screens."},
+  {"scene_idx": 2, "priority": 3, "tier": "stock_broll", "description": "Generic police car exterior at night, no identifying markings", "search_query": "police car lights night", "source_hint": "Pexels / Pixabay", "blur_notes": "Blur plates and unit numbers."},
+  {"scene_idx": 3, "priority": 1, "tier": "real", "description": "Public-domain footage of a forensic laboratory or evidence processing", "search_query": "forensic laboratory evidence processing", "source_hint": "US National Archives; Library of Congress; Prelinger Archives (verify each item)", "blur_notes": "Blur faces of non-official staff."},
+  {"scene_idx": 3, "priority": 3, "tier": "stock_broll", "description": "Generic microscope and pipette close-ups", "search_query": "laboratory pipette microscope", "source_hint": "Pexels / Pixabay", "blur_notes": ""},
+  {"scene_idx": 4, "priority": 1, "tier": "real", "description": "Courthouse exterior from an official or public-domain source", "search_query": "United States courthouse exterior", "source_hint": "GSA / US Courts public media; Library of Congress", "blur_notes": "Blur passers-by."},
+  {"scene_idx": 4, "priority": 3, "tier": "stock_broll", "description": "Generic courthouse steps and columns", "search_query": "courthouse columns", "source_hint": "Pexels / Pixabay", "blur_notes": "Blur passers-by."},
+  {"scene_idx": 5, "priority": 2, "tier": "news_document", "description": "Policy documents on camera: DOJ interim policy cover page, state statute pages", "search_query": "forensic genetic genealogy policy document", "source_hint": "justice.gov; state legislature websites", "blur_notes": ""},
+  {"scene_idx": 6, "priority": 3, "tier": "stock_broll", "description": "Generic quiet landscape at dawn, closing mood", "search_query": "quiet road at dawn", "source_hint": "Pexels / Pixabay", "blur_notes": ""}
+ ],
+ "redactions": [
+  {"scene_idx": 2, "kind": "face", "reason": "Bystanders in any released footage are blurred by default."},
+  {"scene_idx": 2, "kind": "plate", "reason": "Licence plates in any street footage."},
+  {"scene_idx": 0, "kind": "text_pii", "reason": "Names, addresses and phone numbers on any document shown."}
+ ],
+ "foia_suggestions": [
+  "For a real case episode: request body-worn and dash camera recordings and the evidence log from the investigating agency under the state public records law; record request number, date, exemptions claimed and appeal path in the FOIA log.",
+  "Request court exhibits only where they were shown in open court; never request sealed or juvenile records."
+ ]
+}

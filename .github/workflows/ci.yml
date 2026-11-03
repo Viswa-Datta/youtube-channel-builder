@@ -1,0 +1,37 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  worker:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_HOST_AUTH_METHOD: trust }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng tesseract-ocr fonts-dejavu-core
+      - run: pip install -r worker/requirements.txt
+      - run: bash worker/scripts/download-models.sh /tmp/models && sudo ln -s /tmp/models /models
+      - run: cd worker && python -m pytest -q tests/test_rules.py tests/test_youtube_upload.py tests/test_media.py
+        env: { TEST_PG_HOST: localhost, TEST_PG_PORT: "5432", ESPEAK_BIN: espeak-ng, VENDOR: "" }
+  web:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pydantic
+      - run: npm install
+      - run: npm run typecheck
+      - run: npx tsx --test tests/pricing.test.ts
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder

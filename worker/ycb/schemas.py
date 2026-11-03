@@ -1,0 +1,197 @@
+"""JSON schemas for every agent. Output is validated here before the next agent may run."""
+from __future__ import annotations
+
+import re
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+LicenseStatus = Literal["Public Domain", "Public Record with release terms", "Licensed", "Commentary-only", "Do Not Use"]
+ClaimStatus = Literal["confirmed", "disputed", "unknown"]
+SourceTier = Literal["court_record", "agency_release", "contemporaneous_news", "other_video", "reference"]
+TIER_ORDER = {"court_record": 1, "agency_release": 2, "contemporaneous_news": 3, "reference": 4, "other_video": 5}
+
+
+# ------------------------------------------------------------------ Channel Agent
+class NameOption(BaseModel):
+    name: str = Field(min_length=2, max_length=60)
+    rationale: str
+
+
+class ChannelKit(BaseModel):
+    names: list[NameOption] = Field(min_length=5, max_length=5)
+    handles: list[str] = Field(min_length=3, max_length=8)
+    description: str = Field(min_length=40, max_length=1000)
+    about: str = Field(min_length=80, max_length=5000)
+    pillars: list[str] = Field(min_length=3, max_length=4)
+    cadence: str
+    banner_prompt: str
+    profile_image_prompt: str
+    trailer_idea: str
+
+    @field_validator("handles")
+    @classmethod
+    def handle_format(cls, v: list[str]) -> list[str]:
+        out = []
+        for h in v:
+            h = h if h.startswith("@") else "@" + h
+            if not re.fullmatch(r"@[A-Za-z0-9._-]{3,30}", h):
+                raise ValueError(f"invalid YouTube handle {h!r} (3-30 chars: letters, digits, . _ -)")
+            out.append(h)
+        return out
+
+
+CHANNEL_KIT_ITEMS = ["names", "handles", "description", "about", "pillars", "cadence", "banner_prompt",
+                     "profile_image_prompt", "trailer_idea"]
+
+
+# ------------------------------------------------------------------ Ideas Agent
+class Idea(BaseModel):
+    title: str = Field(min_length=10, max_length=100)
+    hook: str = Field(min_length=10, max_length=400)
+    angle: str = Field(min_length=10, max_length=400)
+    pillar: str
+    demand_score: int = Field(ge=0, le=10)
+    competition_score: int = Field(ge=0, le=10, description="10 = very crowded")
+    footage_feasibility_score: int = Field(ge=0, le=10, description="10 = verified public footage very likely")
+    rationale: str
+
+
+class IdeaBatch(BaseModel):
+    ideas: list[Idea] = Field(min_length=20, max_length=30)
+
+
+def rank_score(i: Idea) -> float:
+    return round(0.4 * i.demand_score + 0.25 * (10 - i.competition_score) + 0.35 * i.footage_feasibility_score, 2)
+
+
+# ------------------------------------------------------------------ Research Agent
+class Claim(BaseModel):
+    scene_idx: int | None = Field(default=None, ge=0)
+    claim: str
+    status: ClaimStatus
+    source_refs: list[str] = Field(default_factory=list)
+    note: str = ""
+
+    @model_validator(mode="after")
+    def confirmed_needs_source(self) -> "Claim":
+        if self.status == "confirmed" and not self.source_refs:
+            raise ValueError(f"confirmed claim without a source: {self.claim[:80]!r}")
+        return self
+
+
+class Research(BaseModel):
+    summary: str
+    timeline: list[str] = Field(default_factory=list)
+    claims: list[Claim] = Field(min_length=3)
+    disclaimers: list[str] = Field(default_factory=list)
+    sensitive_topics: list[Literal["health", "finance", "legal", "minors", "graphic"]] = Field(default_factory=list)
+    fact_check_notes: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list, description="What could not be verified")
+
+
+# ------------------------------------------------------------------ Script Agent
+class SceneDraft(BaseModel):
+    idx: int = Field(ge=0)
+    title: str
+    chapter_title: str = Field(max_length=60)
+    draft: str
+    on_screen_text: list[str] = Field(default_factory=list, max_length=6)
+    claim_refs: list[int] = Field(default_factory=list, description="indexes into research.claims")
+
+    @field_validator("draft")
+    @classmethod
+    def draft_len(cls, v: str) -> str:
+        n = len(v.split())
+        if not 60 <= n <= 120:
+            raise ValueError(f"scene draft must be 60-120 words, got {n}")
+        return v
+
+
+class ScriptDraft(BaseModel):
+    scenes: list[SceneDraft] = Field(min_length=3, max_length=14)
+
+    @model_validator(mode="after")
+    def sequential(self) -> "ScriptDraft":
+        if [s.idx for s in self.scenes] != list(range(len(self.scenes))):
+            raise ValueError("scene idx must be 0..n-1 in order")
+        return self
+
+
+class SceneNarration(BaseModel):
+    idx: int
+    narration: str
+
+    def words(self) -> int:
+        return len(self.narration.split())
+
+
+# ------------------------------------------------------------------ Visual Director Agent
+class FootageNeed(BaseModel):
+    scene_idx: int
+    priority: Literal[1, 2, 3]  # 1 real case footage, 2 news/doc on camera, 3 stock B-roll
+    tier: Literal["real", "news_document", "stock_broll"]
+    description: str
+    search_query: str
+    source_hint: str
+    blur_notes: str = ""
+
+    @model_validator(mode="after")
+    def priority_matches_tier(self) -> "FootageNeed":
+        expect = {"real": 1, "news_document": 2, "stock_broll": 3}[self.tier]
+        if self.priority != expect:
+            raise ValueError("priority must match tier (real=1, news_document=2, stock_broll=3)")
+        return self
+
+
+class RedactionNote(BaseModel):
+    scene_idx: int
+    kind: Literal["face", "plate", "manual_box", "graphic_cutaway", "audio_mute", "audio_bleep", "caption_omit", "text_pii"]
+    reason: str
+
+
+class FootagePlan(BaseModel):
+    needs: list[FootageNeed] = Field(min_length=3)
+    redactions: list[RedactionNote] = Field(default_factory=list)
+    foia_suggestions: list[str] = Field(default_factory=list, description="records to request; never promised footage")
+
+
+# ------------------------------------------------------------------ Editor + SEO Agent
+class Chapter(BaseModel):
+    t: str = Field(pattern=r"^\d{1,2}:\d{2}(:\d{2})?$")
+    title: str = Field(max_length=60)
+
+
+class SeoPack(BaseModel):
+    titles: list[str] = Field(min_length=3, max_length=3)
+    description: str = Field(min_length=200, max_length=5000)
+    tags: list[str] = Field(min_length=5, max_length=30)
+    thumbnail_concept: str
+    thumbnail_prompt: str
+    thumbnail_text: str = Field(max_length=40)
+    disclosure_line: str = Field(min_length=20)
+    pinned_comment: str = ""
+
+    @field_validator("titles")
+    @classmethod
+    def titles_short(cls, v: list[str]) -> list[str]:
+        for t in v:
+            if len(t) >= 60:
+                raise ValueError(f"title must be under 60 characters: {t!r} ({len(t)})")
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def tags_budget(cls, v: list[str]) -> list[str]:
+        if sum(len(t) for t in v) > 480:
+            raise ValueError("tags exceed YouTube's 500-character budget")
+        return v
+
+
+class ProductionPack(BaseModel):
+    """Everything the review UI shows for a picked idea before the whole-video render."""
+    research: Research
+    script: ScriptDraft
+    footage: FootagePlan
+    seo: SeoPack
+    chapters: list[Chapter]

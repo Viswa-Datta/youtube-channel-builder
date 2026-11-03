@@ -1,0 +1,6 @@
+PASS auth_profile_created {"email": "test@example.com", "cap": 10.0}
+PASS channel_kit {"names": ["The Quiet Case File", "Record of the Case", "Cold Ledger", "The Long Investigation", "Sourced and Slow"], "pillars": ["Single-case deep dives", "Cold cases revisited", "The investigation explained", "Victims, families, and aftermath"], "estimate_usd": 0.0}
+PASS ideas_20_plus_ranked {"count": 24, "top3": [["How a Cold Case Investigation Actually Works, From First Report to Final Arrest", 7.65], ["Reading a Probable Cause Affidavit, Line by Line", 7.55], ["What Happens After the Arrest: A Cold Case in Court", 7.1]]}
+PASS cost_estimate_shown_before_generation {"free_total": 0.0, "standard_total": 0.4575, "premium_total": 2.7215, "math": "30 min x 143 wpm = 4290 words x 6.0 chars = 25740 voice characters"}
+PASS production_pack {"error": null, "chapters": ["Cold open", "The timeline, sourced", "Bodycam: the response", "What the investigation found", "Court and official record", "What remains disputed / unknown", "Aftermath and closing"], "claims": {"confirmed": 19, "disputed": 1, "unknown": 1}, "sources": {"agency_release": 9, "contemporaneous_news": 2, "reference": 2}, "footage_plan": {"real": 4, "news_document": 2, "st
+PASS worker_killed_mid_render {"scenes_voiced_before_kill": 2, "render_state": {"stage": "voice", "progress": "20.00"}}

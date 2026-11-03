@@ -1,0 +1,74 @@
+{
+  "_comment": "SaaS plans as config, not hard-coded promises. Stripe price IDs are filled in only if you launch paid tiers. Usage add-ons are always shown before purchase.",
+  "currency": "usd",
+  "plans": [
+    {
+      "key": "free",
+      "name": "Free",
+      "price_month": 0,
+      "stripe_price_id": null,
+      "channels": 1,
+      "videos_per_month": 2,
+      "allowed_tiers": [
+        "free"
+      ],
+      "features": [
+        "$0 mode (free LLM tier + self-hosted voice)",
+        "MP4 download",
+        "Manual upload"
+      ]
+    },
+    {
+      "key": "creator",
+      "name": "Creator",
+      "price_month": 19,
+      "stripe_price_id": null,
+      "channels": 1,
+      "videos_per_month": 8,
+      "allowed_tiers": [
+        "free",
+        "standard"
+      ],
+      "features": [
+        "Standard quality",
+        "Scheduling",
+        "Shorts cutter"
+      ]
+    },
+    {
+      "key": "pro",
+      "name": "Pro",
+      "price_month": 39,
+      "stripe_price_id": null,
+      "channels": 3,
+      "videos_per_month": 20,
+      "allowed_tiers": [
+        "free",
+        "standard",
+        "premium"
+      ],
+      "features": [
+        "Batch queue",
+        "Brand kit",
+        "Priority rendering",
+        "Analytics"
+      ]
+    }
+  ],
+  "addons": {
+    "pricing": "provider cost x (1 + margin)",
+    "margin": 0.25,
+    "shown_before_purchase": true
+  },
+  "youtube": {
+    "daily_upload_cap_per_user": 3,
+    "quota_units_per_day_project": 10000,
+    "quota_cost": {
+      "videos.insert": 100,
+      "thumbnails.set": 50,
+      "channels.list": 1,
+      "videos.list": 1
+    },
+    "_comment": "videos.insert dropped from ~1,600 to ~100 units (YouTube Data API revision history, Dec 4 2025); some sources report a further cut in 2026. Verify in Google's Quota Calculator and adjust."
+  }
+}

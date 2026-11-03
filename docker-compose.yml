@@ -1,0 +1,12 @@
+# Local development: Postgres-backed queue + worker. The web app runs with `npm run dev` in ./web.
+# For auth and storage use `supabase start` (Supabase CLI) or a hosted Supabase project.
+services:
+  worker:
+    build: { context: ., dockerfile: worker/Dockerfile }
+    env_file: .env
+    environment:
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-supabase}
+    volumes: ["work:/work"]
+    restart: unless-stopped
+volumes:
+  work: {}

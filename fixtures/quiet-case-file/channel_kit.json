@@ -1,0 +1,22 @@
+{
+  "names": [
+    {"name": "The Quiet Case File", "rationale": "Signals the calm, sourced tone and the case-file format; distinctive and easy to say."},
+    {"name": "Record of the Case", "rationale": "Puts the official record at the centre, matching the court-record-first research rule."},
+    {"name": "Cold Ledger", "rationale": "Short and memorable; evokes old files being reopened line by line."},
+    {"name": "The Long Investigation", "rationale": "Speaks to the long-form, timeline-led format and multi-year cases."},
+    {"name": "Sourced and Slow", "rationale": "Makes the channel's promise explicit: slow storytelling with sources."}
+  ],
+  "handles": ["@thequietcasefile", "@quietcasefile", "@quiet.case.file", "@quietcasefiles"],
+  "description": "Slow, sourced stories of real cases, told with care. Long-form documentaries built from court records, official releases and contemporaneous reporting — timeline-led, never sensational. New 30-minute documentary every two weeks.",
+  "about": "The Quiet Case File tells the stories of real criminal cases slowly and carefully. Every episode is built from the official record first: court filings, agency releases and contemporaneous news, in that order. We mark what is confirmed, what is disputed, and what is still unknown, and we say which is which out loud. We do not use graphic imagery for shock value, we blur bystanders and children, and we never present illustrative footage as the real place or person. Victims and families are at the centre of every story. Narration on this channel is AI-generated and each video lists its sources and footage credits in the description. Corrections are welcome and are pinned when made.",
+  "pillars": [
+    "Single-case deep dives",
+    "Cold cases revisited",
+    "The investigation explained",
+    "Victims, families, and aftermath"
+  ],
+  "cadence": "One 30-minute documentary every two weeks (alternate Thursdays), plus a short sourced update when a case has new court activity.",
+  "banner_prompt": "Wide 2560x1440 banner, deep charcoal and navy palette, an out-of-focus stack of manila case files on a wooden desk lit by a single warm lamp, subtle film grain, generous empty space on the left third for the channel name in a clean serif, no people, no faces, no police imagery, no blood.",
+  "profile_image_prompt": "Minimal square logo: a closed manila folder icon with a thin gold rule, centred on a charcoal background, flat vector style, legible at 98x98 pixels, no text.",
+  "trailer_idea": "A 60-second trailer: an old case-file box is opened, pages are turned, and the narrator explains the channel's three promises — confirmed, disputed, unknown — over document close-ups, ending on the line 'Slow, sourced stories of real cases, told with care.'"
+}

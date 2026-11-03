@@ -1,0 +1,49 @@
+{
+ "summary": "Process explainer, not a single case. Built on NIJ, DOJ and FBI publications plus two contemporaneous news reports on the 2019 DOJ interim policy. A clearly labelled composite case is used to illustrate the steps; no real people are depicted.",
+ "timeline": [
+  "1990: CODIS pilot project begins",
+  "1994: DNA Identification Act",
+  "1998: National DNA Index System operational",
+  "July 2019: NIJ cold case best-practices guide",
+  "Sept 2019: DOJ interim policy on genetic genealogy approved",
+  "Nov 1 2019: DOJ interim policy takes effect"
+ ],
+ "claims": [
+  {"scene_idx": 0, "claim": "There is no single national definition of a cold case; agencies draw the line differently.", "status": "confirmed", "source_refs": ["S1"], "note": "NIJ guide discusses agency-specific definitions."},
+  {"scene_idx": 1, "claim": "NIJ published National Best Practices for Implementing and Sustaining a Cold Case Investigation Unit in July 2019 with 23 recommendations in five categories.", "status": "confirmed", "source_refs": ["S1", "S3"], "note": ""},
+  {"scene_idx": 1, "claim": "CODIS began as a pilot software project in 1990.", "status": "confirmed", "source_refs": ["S4", "S5"], "note": ""},
+  {"scene_idx": 1, "claim": "The DNA Identification Act of 1994 formalized the FBI's authority to establish a national DNA index.", "status": "confirmed", "source_refs": ["S6"], "note": ""},
+  {"scene_idx": 1, "claim": "The National DNA Index System became operational in 1998.", "status": "confirmed", "source_refs": ["S5"], "note": ""},
+  {"scene_idx": 1, "claim": "Improved DNA methods can work with old, degraded or limited evidence; once-inconclusive samples may now yield profiles.", "status": "confirmed", "source_refs": ["S2"], "note": ""},
+  {"scene_idx": 2, "claim": "There is no consistent national policy for releasing body-worn camera footage; it varies with state law and agency policy.", "status": "confirmed", "source_refs": ["S13", "S9"], "note": "Specific state examples are described generically, not attributed to named states."},
+  {"scene_idx": 2, "claim": "BJA maintains a body-worn camera toolkit that covers policy, including public release.", "status": "confirmed", "source_refs": ["S9"], "note": ""},
+  {"scene_idx": 3, "claim": "NIJ recommends operationally separate cold case units staffed by experienced investigators assigned exclusively, with access to forensic support.", "status": "confirmed", "source_refs": ["S1", "S3"], "note": ""},
+  {"scene_idx": 3, "claim": "CODIS profiles originate at the local level and flow to state and national levels.", "status": "confirmed", "source_refs": ["S4"], "note": ""},
+  {"scene_idx": 3, "claim": "Database hits often occur long after an investigation is initiated, so units must be ready to act quickly.", "status": "confirmed", "source_refs": ["S3"], "note": ""},
+  {"scene_idx": 3, "claim": "The DOJ interim policy on forensic genetic genealogy was approved in September 2019 and took effect November 1, 2019.", "status": "confirmed", "source_refs": ["S11", "S10"], "note": ""},
+  {"scene_idx": 3, "claim": "Under the DOJ policy, other available techniques including a CODIS search are expected to be exhausted before genetic genealogy is used.", "status": "confirmed", "source_refs": ["S11", "S10"], "note": ""},
+  {"scene_idx": 3, "claim": "The DOJ policy includes a section limiting the use of a genetic association as the basis for an arrest.", "status": "confirmed", "source_refs": ["S10"], "note": "Exact wording of that section not quoted; narration paraphrases conservatively."},
+  {"scene_idx": 4, "claim": "Under UCR, an offense is cleared by arrest when at least one person is arrested, charged, and turned over to the court for prosecution.", "status": "confirmed", "source_refs": ["S8", "S7"], "note": ""},
+  {"scene_idx": 4, "claim": "Cleared by exceptional means applies when elements beyond law enforcement's control prevent an arrest and charge.", "status": "confirmed", "source_refs": ["S7"], "note": "Death of the offender is a commonly cited example."},
+  {"scene_idx": 5, "claim": "Law enforcement use of genetic genealogy raises privacy concerns and is debated.", "status": "disputed", "source_refs": ["S12"], "note": "Supporters cite solved violent crimes; critics cite consent and third-party privacy."},
+  {"scene_idx": 5, "claim": "Montana and Maryland were the first states to regulate law enforcement use of forensic genealogy.", "status": "confirmed", "source_refs": ["S12"], "note": ""},
+  {"scene_idx": 5, "claim": "Maryland and the District of Columbia prohibit familial searching of their DNA databases.", "status": "confirmed", "source_refs": ["S12"], "note": ""},
+  {"scene_idx": 5, "claim": "The total number of cold cases in the United States.", "status": "unknown", "source_refs": [], "note": "No single authoritative national count found; definitions and reporting differ."},
+  {"scene_idx": 6, "claim": "The NIJ guide addresses victim-centered and trauma-informed approaches, media, and sustaining units beyond short-term funding.", "status": "confirmed", "source_refs": ["S1"], "note": ""}
+ ],
+ "disclaimers": [
+  "This video describes general investigative and legal processes and is not legal advice.",
+  "The case used to illustrate the process is a composite; it is not a real case and depicts no real people."
+ ],
+ "sensitive_topics": ["legal"],
+ "fact_check_notes": [
+  "Confirm S3's article date (Sept 25, 2019) on the NIJ site before publishing.",
+  "Narration avoids naming any real case; keep it that way in edits.",
+  "If adding a statistic on clearance rates, cite the specific UCR year and table."
+ ],
+ "gaps": [
+  "No court record source: this is a process explainer, not a single case.",
+  "Exact text of the DOJ interim policy section on arrests was not retrieved; narration paraphrases the section's existence only.",
+  "No national count of cold cases."
+ ]
+}

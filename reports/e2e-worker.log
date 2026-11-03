@@ -1,0 +1,12 @@
+worker worker-A polling /ycb_e2e?host=/tmp/pg&port=54322
+[worker-A] claimed channel_kit: 084f1921-fd8d-4e36-bdcf-6686dde3a5aa attempt 1
+[worker-A] done channel_kit:
+[worker-A] claimed ideas: 98d4a7a5-ee8a-4ea1-9103-ddb33391dd29 attempt 1
+[worker-A] done ideas:
+[worker-A] claimed production_pack: ddfd348b-dff0-4904-9c03-473980855168 attempt 1
+[worker-A] done production_pack:
+[worker-A] claimed render_stage:script b668dd7f-ab33-4c7a-a429-ba25ed828f2f attempt 1
+[worker-A] done render_stage:script
+[worker-A] claimed render_stage:voice 7656157a-babe-45c8-b1eb-f77f064e4ae2 attempt 1
+worker worker-B polling /ycb_e2e?host=/tmp/pg&port=54322
+[worker-B] claimed render_stage:voice 7656157a-babe-45c8-b1eb-f77f064e4ae2 attempt 2

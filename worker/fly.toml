@@ -1,0 +1,17 @@
+# Fly.io render worker. Deploy from the REPO ROOT (build context must include config/ and fixtures/):
+#   fly deploy --config worker/fly.toml --dockerfile worker/Dockerfile .
+app = "ycb-render-worker"
+primary_region = "iad"
+
+[processes]
+  worker = "python -m ycb.main worker"
+
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-4x"
+  memory = "4gb"
+
+[mounts]
+  source = "ycb_work"
+  destination = "/work"
+  initial_size = "20gb"

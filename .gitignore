@@ -1,0 +1,12 @@
+.env
+.env.local
+**/.env*.local
+.storage/
+.storage-e2e/
+node_modules/
+web/.next/
+web/config/
+__pycache__/
+*.pyc
+/models/
+reports/*.mp4
