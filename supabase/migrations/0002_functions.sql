@@ -28,7 +28,7 @@ returns table(renders int, avg_cost_usd numeric) language sql stable as $$
   select count(*)::int, round(avg(cost)::numeric, 4) from r;
 $$;
 
-create or replace view spend_by_provider_month as
+create or replace view spend_by_provider_month with (security_invoker = true) as
   select user_id, date_trunc('month', created_at) as month, provider,
          sum(cost_usd)::numeric(12,4) as cost_usd, count(*) as calls
   from cost_ledger group by 1,2,3;

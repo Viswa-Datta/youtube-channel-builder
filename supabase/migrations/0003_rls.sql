@@ -66,9 +66,17 @@ create policy read_own_jobs on jobs for select using (user_id = auth.uid());
 drop policy if exists read_own_quota on youtube_quota;
 create policy read_own_quota on youtube_quota for select using (user_id = auth.uid());
 
--- OAuth tokens: never readable from the browser. A safe view exposes status only.
-drop policy if exists no_client_tokens on youtube_connections;
-create or replace view youtube_connection_status with (security_invoker = false) as
+-- OAuth tokens: never readable from the browser. Users may read only the status columns of their own row
+-- (column-level grant), through a security-invoker view.
+drop policy if exists own_connection_status on youtube_connections;
+create policy own_connection_status on youtube_connections for select using (user_id = auth.uid());
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on table youtube_connections from anon, authenticated';
+    execute 'grant select (user_id, channel_id, channel_title, scopes, audited_project, connected_at, expires_at) on youtube_connections to authenticated';
+  end if;
+end $$;
+create or replace view youtube_connection_status with (security_invoker = true) as
   select user_id, channel_id, channel_title, scopes, audited_project, connected_at, expires_at
     from youtube_connections where user_id = auth.uid();
 
