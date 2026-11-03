@@ -58,9 +58,9 @@ The build sandbox had **no access to npm or PyPI** (blocked by network policy) a
 - 👤 `TOKEN_ENCRYPTION_KEY`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, Supabase keys, `SENTRY_DSN`
 
 ## Legal, SEO, monitoring, backups
-- ✅ Privacy policy, terms (users responsible for YouTube ToS / Community Guidelines compliance), data-deletion page and flow (template text)
+- 🟡 Privacy policy, terms (users responsible for YouTube ToS / Community Guidelines compliance), data-deletion page and flow (template text)
 - 👤 Have the legal pages reviewed for your jurisdiction; fill operator name and contact
-- ✅ robots.txt, sitemap, metadata; Sentry (web + instrumentation) and Vercel Analytics wired, inert until DSN/enabled
+- 🟡 robots.txt, sitemap, metadata; Sentry (web + instrumentation) and Vercel Analytics wired, inert until DSN/enabled
 - 👤 Backups: Supabase daily backups (Pro) or the `pg_dump` + `rclone` jobs in docs/DEPLOY.md §5
 - 👤 Stripe: not built (spec: only if launching paid tiers). Plans are config; add Stripe price IDs when you charge
 
