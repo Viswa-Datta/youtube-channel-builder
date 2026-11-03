@@ -1,0 +1,10 @@
+worker worker-V3 polling /ycb_e2e?host=/tmp/pg&port=54322
+[worker-V3] claimed render_stage:script 2a33aef9-f15a-4501-bd18-a4329067284d attempt 1
+[worker-V3] done render_stage:script
+[worker-V3] claimed render_stage:voice 7d85f5fa-0550-48c3-9d22-f8471f59a84a attempt 1
+[worker-V3] done render_stage:voice
+[worker-V3] claimed render_stage:footage 3f3cbb1e-3ee6-458f-a447-32ed19454be8 attempt 1
+[worker-V3] done render_stage:footage
+[worker-V3] claimed render_stage:blur f7897d98-e0b8-4354-8f02-f06620b776aa attempt 1
+[worker-V3] done render_stage:blur
+[worker-V3] claimed render_stage:assemble c055322b-a047-4487-b70a-7488378010a4 attempt 1

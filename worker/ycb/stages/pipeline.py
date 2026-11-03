@@ -25,7 +25,7 @@ from ..storage import project_key, store
 
 STAGES = ["script", "voice", "footage", "blur", "assemble", "package"]
 WEIGHT = {"script": 10, "voice": 35, "footage": 5, "blur": 10, "assemble": 35, "package": 5}
-CARD_STYLE_VERSION = "cards-v3"
+CARD_STYLE_VERSION = "cards-v5"
 
 
 def sha(*parts) -> str:
@@ -261,20 +261,30 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         remaining -= take
     # generated cards fill the rest, changing every ~16 s
     sentences = [x["text"] for x in (s["sentence_timings"] or [])]
-    pool: list[tuple[str, object]] = [("doc", t) for t in s["on_screen_text"]]
+    docs = list(s["on_screen_text"])
+    pool: list[tuple[str, object]] = [("doc", i) for i in range(len(docs))]
     if timeline:
         pool.append(("timeline", None))
-    key_sents = [t for t in sentences if re.search(r"\d|record|court|report|evidence|DNA|warrant|file", t)][:8]
-    pool += [("statement", t) for t in key_sents]
-    if not pool:
-        pool = [("statement", t) for t in sentences[:6]] or [("doc", s["title"])]
+    # statement cards: substantive sentences (9-32 words) that carry a fact, spread across the scene
+    cands = [t for t in sentences if 9 <= len(t.split()) <= 32]
+    key_sents = [t for t in cands if re.search(r"\d|record|court|evidence|DNA|database|policy|warrant|laborator|affidavit|clear", t)]
+    key_sents = (key_sents or cands)[:10]
+    stmts = [("statement", t) for t in key_sents]
+    mixed: list[tuple[str, object]] = []
+    for i in range(max(len(pool), len(stmts))):  # interleave documents and statements
+        if i < len(pool):
+            mixed.append(pool[i])
+        if i < len(stmts):
+            mixed.append(stmts[i])
+    pool = mixed or [("statement", s["title"])]
     n_cards = max(1, int(round(remaining / 16.0)))
     per = remaining / n_cards
     for i in range(n_cards):
         kind, val = pool[i % len(pool)]
         out = d / f"card-{i:02d}.png"
         if kind == "doc":
-            cards.document_card(out, s["title"], [str(val)], f"Scene {s['idx'] + 1} of {n_scenes}", seed=s["idx"] * 100 + i)
+            lines = [("> " if k == val else "  ") + d for k, d in enumerate(docs)]
+            cards.document_card(out, s["title"], lines, f"Scene {s['idx'] + 1} of {n_scenes}", seed=s["idx"] * 100 + i)
         elif kind == "timeline":
             items = [(t.split(":", 1)[0][:14], t.split(":", 1)[-1].strip()[:60]) for t in timeline[:6]]
             cards.timeline_card(out, items, highlight=min(len(items) - 1, s["idx"] * len(items) // max(1, n_scenes)),
@@ -394,7 +404,7 @@ def apply_chapters(description: str, chapters: list[tuple[float, str]]) -> str:
 def credits(c: Ctx) -> str:
     rows = db.q("""select * from assets where project_id=%s and (selected or tier='gap') order by tier, created_at""", (c.pid,))
     out = ["Sources and footage credits:"]
-    for s in db.q("select * from research_sources where project_id=%s order by ref", (c.pid,)):
+    for s in db.q("select * from research_sources where project_id=%s order by length(ref), ref", (c.pid,)):
         out.append(f"- [{s['ref']}] {s['title']} — {s['publisher'] or ''} {s['url'] or ''}".rstrip())
     for a in rows:
         if a["tier"] == "gap":
@@ -458,7 +468,7 @@ def stage_package(c: Ctx) -> None:
     ledger.record(user_id=c.uid, project_id=c.pid, render_id=c.rid, stage="render", agent="editor", provider="compute",
                   model=comp["label"], unit_type="seconds", units_in=secs, cost_usd=secs / 3600 * comp["per_render_hour"],
                   idempotency_key=f"compute:{c.rid}")
-    db.x("""update renders set script_path=%s, pack_path=%s, thumb_path=%s, status='succeeded', stage='done', progress=100,
+    db.x("""update renders set script_path=%s, pack_path=%s, thumb_path=%s, status='succeeded', stage='done', progress=100, error=null,
             finished_at=now() where id=%s""", (keys["script_path"], keys["pack_path"], keys["thumb_path"], c.rid))
     db.x("update projects set status='review' where id=%s", (c.pid,))
     db.x("update ideas set status='ready' where id=%s", (c.project["idea_id"],))

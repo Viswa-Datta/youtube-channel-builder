@@ -81,8 +81,8 @@ def ambient_bed(seconds: float, out: Path) -> Path:
     """A quiet generated drone/pad (made by the app, so no licence needed) when no library track is chosen."""
     d = f"{seconds + 2:.2f}"
     fc = ("[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];"
-          "[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,"
-          "lowpass=f=1800,afade=t=in:d=4" + f",afade=t=out:st={seconds - 4:.2f}:d=4[o]")
+          "[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.1:d=0.35,aecho=0.6:0.5:900:0.35,"
+          "lowpass=f=1800,loudnorm=I=-16:TP=-3,afade=t=in:d=4" + f",afade=t=out:st={seconds - 4:.2f}:d=4[o]")
     run(["-f", "lavfi", "-i", f"sine=f=110:d={d}", "-f", "lavfi", "-i", f"sine=f=164.81:d={d}",
          "-f", "lavfi", "-i", f"sine=f=220:d={d}", "-f", "lavfi", "-i", f"anoisesrc=color=brown:a=0.02:d={d}",
          "-filter_complex", fc, "-map", "[o]", "-ac", "2", "-ar", "48000", "-t", f"{seconds:.3f}", str(out)])

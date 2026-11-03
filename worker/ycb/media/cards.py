@@ -78,7 +78,7 @@ def document_card(out: Path, heading: str, lines: list[str], footer: str, seed: 
     img = canvas()
     W, H = img.size
     rnd = random.Random(seed)
-    page = Image.new("RGB", (int(W * 0.56), int(H * 0.78)), PAPER)
+    page = Image.new("RGB", (int(W * 0.56), int(H * 0.54)), PAPER)
     pd = ImageDraw.Draw(page)
     pw, ph = page.size
     pd.rectangle([0, 0, pw - 1, ph - 1], outline=(200, 194, 178), width=3)
@@ -96,7 +96,7 @@ def document_card(out: Path, heading: str, lines: list[str], footer: str, seed: 
     angle = rnd.uniform(-2.2, 2.2)
     alpha = Image.new("L", page.size, 255).rotate(angle, expand=True, resample=Image.BICUBIC)
     page = page.rotate(angle, expand=True, resample=Image.BICUBIC)
-    x, y0 = int(W * 0.22 + rnd.uniform(-20, 20)), int(H * 0.1)
+    x, y0 = int(W * 0.22 + rnd.uniform(-20, 20)), int(H * 0.08)
     shadow_mask = Image.new("L", img.size, 0)
     shadow_mask.paste(alpha, (x + 26, y0 + 34))
     shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(28)).point(lambda v: int(v * 0.7))
@@ -110,7 +110,7 @@ def timeline_card(out: Path, items: list[tuple[str, str]], highlight: int, title
     d = ImageDraw.Draw(img)
     W, H = img.size
     d.text((W * 0.1, H * 0.12), title.upper(), font=font(SANS_B, 32), fill=ACCENT)
-    y0, x0, x1 = H * 0.52, W * 0.1, W * 0.9
+    y0, x0, x1 = H * 0.42, W * 0.1, W * 0.9
     d.line([(x0, y0), (x1, y0)], fill=(90, 90, 90), width=4)
     n = max(1, len(items))
     for i, (when, what) in enumerate(items):
@@ -130,11 +130,15 @@ def statement_card(out: Path, text: str, label: str, seed: int = 0) -> Path:
     img = canvas()
     d = ImageDraw.Draw(img)
     W, H = img.size
-    d.text((W * 0.14, H * 0.3), label.upper(), font=font(SANS_B, 30), fill=ACCENT)
-    y = H * 0.38
-    for line in textwrap.wrap(text, 38)[:5]:
-        d.text((W * 0.14, y), line, font=font(SERIF, 64), fill=INK)
-        y += 86
+    d.text((W * 0.14, H * 0.2), label.upper(), font=font(SANS_B, 30), fill=ACCENT)
+    y = H * 0.27
+    lines = textwrap.wrap(text, 42)
+    if len(lines) > 4:
+        lines = lines[:4]
+        lines[-1] = lines[-1].rstrip(".,;") + "…"
+    for line in lines:
+        d.text((W * 0.14, y), line, font=font(SERIF, 58), fill=INK)
+        y += 80
     return _save(_vignette(_grain(img, seed)), out)
 
 
@@ -145,10 +149,22 @@ def thumbnail(out: Path, text: str, sub: str) -> Path:
     for i in range(0, 1280, 4):  # subtle archival stripes
         d.line([(i, 0), (i, 720)], fill=(18, 20, 26) if i % 8 else (16, 18, 23))
     d.rectangle([60, 70, 72, 650], fill=ACCENT)
+    # headline: the largest size whose wrapped lines (max 3) all fit left of the folder graphic
+    best = None
+    for size in range(132, 58, -6):
+        f = font(SANS_B, size)
+        for width in range(6, 20):
+            lines = textwrap.wrap(text.upper(), width)
+            if len(lines) <= 3 and all(d.textlength(l, font=f) <= 740 for l in lines):
+                best = (size, f, lines)
+                break
+        if best:
+            break
+    size, f, lines = best or (60, font(SANS_B, 60), textwrap.wrap(text.upper(), 18)[:3])
     y = 120
-    for line in textwrap.wrap(text.upper(), 16)[:3]:
-        d.text((110, y), line, font=font(SANS_B, 118), fill=INK)
-        y += 140
+    for line in lines:
+        d.text((110, y), line, font=f, fill=INK)
+        y += int(size * 1.18)
     d.text((112, y + 20), sub, font=font(SANS, 44), fill=ACCENT)
     folder = Image.new("RGB", (330, 420), PAPER)
     fd = ImageDraw.Draw(folder)

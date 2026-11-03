@@ -88,6 +88,186 @@
     "stage": "voice",
     "progress": "20.00"
    }
+  },
+  "retry_resumes_after_kill": {
+   "pass": true,
+   "render_status": "succeeded",
+   "error": "FFmpegError: ffmpeg failed (222): -f lavfi -i sine=f=110:d=1814.96 -f lavfi -i sine=f=164.81:d=1814.96 -f lavfi -i sine=f=220:d=1814.96 -f lavfi -i anoisesrc=color=brown:a=0.02:d=1814.96 -filter_complex [0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o] -\n[Parsed_tremolo_6 @ 0x55d41ebbec00] Value 0.080000 for parameter 'f' out of range [0.1 - 20000]\nError applying option 'f' to filter 'tremolo': Numerical result out of range\nFailed to set value '[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o]' for option 'filter_complex': Numerical result out of range\nError parsing global options: Numerical result out of range\n",
+   "render_minutes": 90.5,
+   "jobs": [
+    {
+     "stage": "script",
+     "status": "succeeded",
+     "attempts": 1,
+     "locked_by": null,
+     "last_error": null
+    },
+    {
+     "stage": "voice",
+     "status": "succeeded",
+     "attempts": 2,
+     "locked_by": null,
+     "last_error": " | lease expired (worker lost), resumed"
+    },
+    {
+     "stage": "footage",
+     "status": "succeeded",
+     "attempts": 1,
+     "locked_by": null,
+     "last_error": null
+    },
+    {
+     "stage": "blur",
+     "status": "succeeded",
+     "attempts": 1,
+     "locked_by": null,
+     "last_error": null
+    },
+    {
+     "stage": "assemble",
+     "status": "succeeded",
+     "attempts": 3,
+     "locked_by": null,
+     "last_error": "FFmpegError: ffmpeg failed (222): -f lavfi -i sine=f=110:d=1814.96 -f lavfi -i sine=f=164.81:d=1814.96 -f lavfi -i sine=f=220:d=1814.96 -f lavfi -i anoisesrc=color=brown:a=0.02:d=1814.96 -filter_complex [0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o] -\n[Parsed_tremolo_6 @ 0x55d41ebbec00] Value 0.080000 for parameter 'f' out of range [0.1 - 20000]\nError applying option 'f' to filter 'tremolo': Numerical result out of range\nFailed to set value '[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o]' for option 'filter_complex': Numerical result out of range\nError parsing global options: Numerical result out of range\n\nne.py\", line 366, in _music\n    db.jsonb({**check, \"loudnorm_first_pass\": stats}), c.rid))\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/claude/ycb/worker/ycb/media/compose.py\", line 86, in ambient_bed\n    run([\"-f\", \"lavfi\", \"-i\", f\"sine=f=110:d={d}\", \"-f\", \"lavfi\", \"-i\", f\"sine=f=164.81:d={d}\",\n    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n         \"-f\", \"lavfi\", \"-i\", f\"sine=f=220:d={d}\", \"-f\", \"lavfi\", \"-i\", f\"anoisesrc=color=brown:a=0.02:d={d}\",\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n         \"-filter_complex\", fc, \"-map\", \"[o]\", \"-ac\", \"2\", \"-ar\", \"48000\", \"-t\", f\"{seconds:.3f}\", str(out)])\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/claude/ycb/worker/ycb/media/ff.py\", line 19, in run\n    raise FFmpegError(f\"ffmpeg failed ({p.returncode}): {' '.join(args)[:400]}\\n{p.stderr[-3000:]}\")\nycb.media.ff.FFmpegError: ffmpeg failed (222): -f lavfi -i sine=f=110:d=1814.96 -f lavfi -i sine=f=164.81:d=1814.96 -f lavfi -i sine=f=220:d=1814.96 -f lavfi -i anoisesrc=color=brown:a=0.02:d=1814.96 -filter_complex [0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o] -\n[Parsed_tremolo_6 @ 0x55d41ebbec00] Value 0.080000 for parameter 'f' out of range [0.1 - 20000]\nError applying option 'f' to filter 'tremolo': Numerical result out of range\nFailed to set value '[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o]' for option 'filter_complex': Numerical result out of range\nError parsing global options: Numerical result out of range\n\n"
+    },
+    {
+     "stage": "package",
+     "status": "succeeded",
+     "attempts": 1,
+     "locked_by": null,
+     "last_error": null
+    }
+   ],
+   "voice_ledger_rows": 7,
+   "voice_rows_before_kill": 2,
+   "no_double_charge": true,
+   "voiced_scenes_not_redone": true
+  },
+  "export_has_voice_audio": {
+   "pass": true,
+   "has_audio": true,
+   "has_video": true,
+   "duration": 1812.963,
+   "audio_codec": "aac",
+   "video_codec": "h264",
+   "width": 1920,
+   "height": 1080,
+   "chapters": 7,
+   "subtitle_streams": 1,
+   "integrated_lufs": -14.3,
+   "lra": 2.5,
+   "true_peak_dbfs": -1.1,
+   "silence_ratio": 0.0
+  },
+  "loudness_minus_14_lufs": {
+   "pass": true,
+   "integrated_lufs": -14.3,
+   "true_peak": -1.1
+  },
+  "full_30_min_narration": {
+   "pass": true,
+   "duration_min": 30.22,
+   "words": 4376
+  },
+  "chapters_and_captions": {
+   "pass": true,
+   "chapters": [
+    [
+     0.0,
+     "Cold open"
+    ],
+    [
+     267.8,
+     "The timeline, sourced"
+    ],
+    [
+     557.4,
+     "Bodycam: the response"
+    ],
+    [
+     822.2,
+     "What the investigation found"
+    ],
+    [
+     1121.2,
+     "Court and official record"
+    ],
+    [
+     1350.8,
+     "What remains disputed / unknown"
+    ],
+    [
+     1592.9,
+     "Aftermath and closing"
+    ]
+   ],
+   "srt_cues": 457
+  },
+  "downloads_present": {
+   "pass": true,
+   "files": {
+    "mp4_path": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/renders/v-1.mp4",
+    "srt_path": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/captions.srt",
+    "script_path": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/renders/script-v-1.txt",
+    "pack_path": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/renders/upload-pack-v-1.txt",
+    "thumb_path": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/renders/thumb-v-1.jpg"
+   },
+   "pack_has_chapters": true,
+   "pack_has_credits": true
+  },
+  "ledger_matches_estimate": {
+   "pass": true,
+   "estimate_usd": 0.0,
+   "ledger_usd": 0.0,
+   "rows": [
+    {
+     "provider": "compute",
+     "model": "Render on your own machine/VPS",
+     "n": 1,
+     "c": "0.000000"
+    },
+    {
+     "provider": "fixture",
+     "model": "quiet-case-file",
+     "n": 12,
+     "c": "0.000000"
+    },
+    {
+     "provider": "kokoro",
+     "model": "am_michael",
+     "n": 7,
+     "c": "0.000000"
+    }
+   ]
+  },
+  "publish_blocked_before_review": {
+   "pass": true,
+   "failing": [
+    "blur_signed_off",
+    "fact_checked",
+    "approved"
+   ]
+  },
+  "approve_blocked_before_blur_signoff": {
+   "pass": true
+  },
+  "checklist_passes_after_review": {
+   "pass": true,
+   "items": {
+    "footage_logged": true,
+    "rights_checked": true,
+    "blur_signed_off": true,
+    "fact_checked": true,
+    "title_length": true,
+    "chapters_in_description": true,
+    "disclosure": true,
+    "thumbnail_safe": true,
+    "approved": true
+   },
+   "title": "How a Cold Case Is Actually Solved, Step by Step"
   }
- }
+ },
+ "project_id": "aa8b86e3-cab2-4dc5-9077-65fe780d5971",
+ "render_id": "0a7ab725-9baf-42e7-b86b-1068f81b8b6e",
+ "finished": "2026-11-03 01:47:25"
 }

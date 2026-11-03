@@ -10,3 +10,27 @@ worker worker-A polling /ycb_e2e?host=/tmp/pg&port=54322
 [worker-A] claimed render_stage:voice 7656157a-babe-45c8-b1eb-f77f064e4ae2 attempt 1
 worker worker-B polling /ycb_e2e?host=/tmp/pg&port=54322
 [worker-B] claimed render_stage:voice 7656157a-babe-45c8-b1eb-f77f064e4ae2 attempt 2
+[worker-B] done render_stage:voice
+[worker-B] claimed render_stage:footage 1a794bbf-13e6-4423-b058-31d95b560239 attempt 1
+[worker-B] done render_stage:footage
+[worker-B] claimed render_stage:blur 75efaecd-427e-44ff-9752-d9967756b70f attempt 1
+[worker-B] done render_stage:blur
+[worker-B] claimed render_stage:assemble db84476b-4d79-43cc-9e11-6d95e21ee566 attempt 1
+[worker-B] failed render_stage: ffmpeg failed (222): -f lavfi -i sine=f=110:d=1814.96 -f lavfi -i sine=f=164.81:d=1814.96 -f lavfi -i sine=f=220:d=1814.96 -f lavfi -i anoisesrc=color=brown:a=0.02:d=1814.96 -filter_complex [0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o] -
+[Parsed_tremolo_6 @ 0x55a660c29c00] Value 0.080000 for parameter 'f' out of range [0.1 - 20000]
+Error applying option 'f' to filter 'tremolo': Numerical result out of range
+Failed to set value '[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o]' for option 'filter_complex': Numerical result out of range
+Error parsing global options: Numerical result out of range
+
+[worker-B] claimed render_stage:assemble db84476b-4d79-43cc-9e11-6d95e21ee566 attempt 2
+[worker-B] failed render_stage: ffmpeg failed (222): -f lavfi -i sine=f=110:d=1814.96 -f lavfi -i sine=f=164.81:d=1814.96 -f lavfi -i sine=f=220:d=1814.96 -f lavfi -i anoisesrc=color=brown:a=0.02:d=1814.96 -filter_complex [0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o] -
+[Parsed_tremolo_6 @ 0x55d41ebbec00] Value 0.080000 for parameter 'f' out of range [0.1 - 20000]
+Error applying option 'f' to filter 'tremolo': Numerical result out of range
+Failed to set value '[0]volume=0.05[a];[1]volume=0.035[b];[2]volume=0.025[c];[3]lowpass=f=320,volume=0.5[n];[a][b][c][n]amix=inputs=4:normalize=0,tremolo=f=0.08:d=0.35,aecho=0.6:0.5:900:0.35,lowpass=f=1800,afade=t=in:d=4,afade=t=out:st=1808.96:d=4[o]' for option 'filter_complex': Numerical result out of range
+Error parsing global options: Numerical result out of range
+
+worker worker-C polling /ycb_e2e?host=/tmp/pg&port=54322
+[worker-C] claimed render_stage:assemble db84476b-4d79-43cc-9e11-6d95e21ee566 attempt 3
+[worker-C] done render_stage:assemble
+[worker-C] claimed render_stage:package beac96da-9b47-4d46-a8b4-f3db33884c4b attempt 1
+[worker-C] done render_stage:package
