@@ -22,7 +22,7 @@ export default async function IdeasPage({ params, searchParams }: { params: Prom
         </div>
         <GenerateButton label={ideas?.length ? "Generate more ideas" : "Generate 25 ideas"} action="ideas" minutes={ch?.target_minutes ?? 12}
           defaultTier={defaultTier} ctx={ctx} endpoint="/api/jobs" payload={{ kind: "ideas", channel_id: id, count: 25 }}
-          redirectTo={(j) => `?job=${(j.job as { id: string }).id}`} />
+          redirectTo={`/channels/${id}/ideas?job={job}`} />
       </div>
       {job && <JobWatcher jobId={job} label="Ideas Agent" />}
       <p className="text-xs text-muted-foreground">Rank = 0.40 × demand + 0.25 × (10 − competition) + 0.35 × footage feasibility. Cost is the estimated full-video cost at your default tier.</p>

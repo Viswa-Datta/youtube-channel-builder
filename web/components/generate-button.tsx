@@ -17,7 +17,8 @@ export function GenerateButton(props: {
   onStarted?: (res: { job?: { id: string }; render?: { id: string }; id?: string }) => void;
   variant?: ButtonProps["variant"];
   size?: ButtonProps["size"];
-  redirectTo?: (res: Record<string, unknown>) => string | null;
+  /** Path to open after the job starts; "{job}" is replaced with the new job id. A string, not a function, so server pages can pass it. */
+  redirectTo?: string;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -37,7 +38,8 @@ export function GenerateButton(props: {
           const j = await r.json();
           if (!r.ok) throw new Error(j.error ?? "failed");
           props.onStarted?.(j);
-          const to = props.redirectTo?.(j);
+          const jobId = (j.job as { id?: string } | undefined)?.id;
+          const to = props.redirectTo && jobId ? props.redirectTo.replace("{job}", jobId) : null;
           if (to) router.push(to);
           else router.refresh();
         }}

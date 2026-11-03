@@ -44,7 +44,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           {p.status !== "pack_pending" && (
             <GenerateButton label={latest ? "Re-render changed scenes" : "Generate whole video"} action="whole_video" minutes={p.target_minutes}
               defaultTier={p.tier} ctx={ctx} endpoint={`/api/projects/${id}/render`} payload={{}}
-              redirectTo={(j) => `/projects/${id}?job=${(j.job as { id: string }).id}`} />
+              redirectTo={`/projects/${id}?job={job}`} />
           )}
           {latest?.status === "succeeded" && <Button variant="outline" asChild><Link href={`/projects/${id}/studio`}>Review Studio</Link></Button>}
         </div>

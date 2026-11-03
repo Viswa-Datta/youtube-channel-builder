@@ -13,6 +13,7 @@ export function IntakeForm({ ctx, defaultTier }: { ctx: CostContext; defaultTier
   const [channelId, setChannelId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
 
   return (
@@ -20,15 +21,22 @@ export function IntakeForm({ ctx, defaultTier }: { ctx: CostContext; defaultTier
       className="space-y-4"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (saving) return;
         setErr(null);
-        const r = await fetch("/api/channels", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...f, competitor_urls: f.competitor_urls.split(/\s+/).filter(Boolean) }),
-        });
-        const j = await r.json();
-        if (!r.ok) return setErr(j.error ?? "Could not save");
-        setChannelId(j.id);
-        setOpen(true);
+        if (channelId) return setOpen(true); // already saved: never create a duplicate channel
+        setSaving(true);
+        try {
+          const r = await fetch("/api/channels", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...f, competitor_urls: f.competitor_urls.split(/\s+/).filter(Boolean) }),
+          });
+          const j = await r.json();
+          if (!r.ok) return setErr(j.error ?? "Could not save");
+          setChannelId(j.id);
+          setOpen(true);
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
@@ -45,7 +53,7 @@ export function IntakeForm({ ctx, defaultTier }: { ctx: CostContext; defaultTier
         </div>
       </div>
       {err && <p className="text-sm text-destructive">{err}</p>}
-      <Button type="submit">Save and generate channel kit</Button>
+      <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save and generate channel kit"}</Button>
       {channelId && (
         <CostModal open={open} onOpenChange={setOpen} action="channel_kit" minutes={f.target_minutes} title="Channel kit" defaultTier={defaultTier} ctx={ctx}
           onConfirm={async (tier) => {

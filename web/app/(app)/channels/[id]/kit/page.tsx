@@ -25,7 +25,7 @@ export default async function KitPage({ params, searchParams }: { params: Promis
         <div className="flex gap-2">
           <GenerateButton label={kit ? "Regenerate whole kit" : "Generate kit"} variant="outline" action="channel_kit" minutes={ch?.target_minutes ?? 12}
             defaultTier={defaultTier} ctx={ctx} endpoint="/api/jobs" payload={{ kind: "channel_kit", channel_id: id }}
-            redirectTo={(j) => `?job=${(j.job as { id: string }).id}`} />
+            redirectTo={`/channels/${id}/kit?job={job}`} />
           <Button asChild><Link href={`/channels/${id}/ideas`}>Idea board →</Link></Button>
         </div>
       </div>
