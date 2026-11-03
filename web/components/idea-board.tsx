@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,8 @@ const COLS = [
 export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[]; ctx: CostContext; defaultTier: Tier; minutes: number }) {
   const router = useRouter();
   const [items, setItems] = useState(ideas);
+  // When the page refreshes with new ideas (e.g. after the Ideas Agent finishes), show them.
+  useEffect(() => setItems(ideas), [ideas]);
   const [pick, setPick] = useState<Idea | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [col, setCol] = useState<string>("suggested"); // phone: one column at a time
