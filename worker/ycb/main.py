@@ -99,9 +99,24 @@ def worker() -> None:
     signal.signal(signal.SIGTERM, _sig)
     signal.signal(signal.SIGINT, _sig)
     print(f"worker {settings.worker_id} polling {settings.database_url.split('@')[-1]}", flush=True)
+    backoff = 5
     while not _stop:
-        if not run_one():
-            time.sleep(settings.poll_seconds)
+        try:
+            if not run_one():
+                time.sleep(settings.poll_seconds)
+            backoff = 5
+        except Exception as e:  # noqa: BLE001 — database unreachable etc.: wait and retry, never crash-loop
+            safe = settings.database_url.split("@")[-1]
+            print(f"[{settings.worker_id}] cannot reach the database ({safe}): {type(e).__name__}: {e}. "
+                  f"Retrying in {backoff}s. If this repeats, check DATABASE_URL (a password with @ # / : ? % must be URL-encoded).",
+                  file=sys.stderr, flush=True)
+            try:
+                db.conn().close()
+            except Exception:  # noqa: BLE001
+                pass
+            db._local.conn = None
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 120)
 
 
 def check_env() -> dict:
