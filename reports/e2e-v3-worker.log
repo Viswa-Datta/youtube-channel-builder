@@ -8,3 +8,6 @@ worker worker-V3 polling /ycb_e2e?host=/tmp/pg&port=54322
 [worker-V3] claimed render_stage:blur f7897d98-e0b8-4354-8f02-f06620b776aa attempt 1
 [worker-V3] done render_stage:blur
 [worker-V3] claimed render_stage:assemble c055322b-a047-4487-b70a-7488378010a4 attempt 1
+[worker-V3] done render_stage:assemble
+[worker-V3] claimed render_stage:package a74b0b5c-e647-400e-864e-0f38618f51ba attempt 1
+[worker-V3] done render_stage:package

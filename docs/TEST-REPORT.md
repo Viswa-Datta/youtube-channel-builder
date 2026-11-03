@@ -3,7 +3,10 @@
 **Video:** "How a Cold Case Investigation Actually Works, From First Report to Final Arrest" (published title:
 "How a Cold Case Is Actually Solved, Step by Step"), channel **The Quiet Case File**, niche True Crime Documentary.
 **Where:** the build sandbox (2 vCPU, 7 GB RAM), real Postgres 16, real worker processes, real FFmpeg/Kokoro/YuNet/YOLO.
-**Raw results:** `reports/e2e-30min.json`, `reports/e2e-rerender.json`, worker logs, `reports/contact-sheet-*.jpg`.
+**Raw results:** `reports/e2e-30min.json`, `reports/e2e-rerender.json`, `reports/e2e-v3.json`, worker logs, `reports/contact-sheet-*.jpg`.
+**Delivered video:** render **v3** — 30:13, 1920×1080 H.264 + AAC 48 kHz stereo, −14.3 LUFS / −1.1 dBTP, 7 chapter markers,
+burned-in captions plus a selectable caption track, 111 MB. Delivered alongside it: captions .srt, script .txt, YouTube
+upload pack .txt and thumbnail .jpg.
 
 ## Read this first: what was real and what was not
 | Part | Status in this run |
@@ -49,8 +52,9 @@ the other 6 scenes' audio and visuals were reused, exactly **one** new voice led
 **24.7 min vs 90.5 min** for the full render. The v2 export again passed: audio present, −14.3 LUFS, 7 chapters, captions.
 Edits also clear the fact-check and approval, so the reviewer must re-check before publishing.
 
-A third render (v3) changed only the card style: it reused **all** narration (0 voice ledger rows added) and rebuilt the
-visuals. v3 is the delivered video.
+A third render (v3) changed only the card style: it reused **all** narration (0 voice ledger rows added), rebuilt the
+visuals in 36.9 min and passed the same export checks (audio present, −14.3 LUFS, 7 chapters, captions). v3 is the delivered
+video; `reports/contact-sheet-v3.jpg` shows 8 frames across it with captions clear of the card text.
 
 ## Bugs found by these tests and fixed
 1. Postgres function calls needed explicit casts (`within_cap`, `heartbeat_job`, `claim_job`, `fail_job`).

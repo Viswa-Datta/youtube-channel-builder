@@ -1,0 +1,24 @@
+{
+ "version": 3,
+ "status": "succeeded",
+ "error": null,
+ "minutes": 36.9,
+ "voice_rows_added": 0,
+ "export": {
+  "has_audio": true,
+  "has_video": true,
+  "duration": 1813.0,
+  "audio_codec": "aac",
+  "video_codec": "h264",
+  "width": 1920,
+  "height": 1080,
+  "chapters": 7,
+  "subtitle_streams": 1,
+  "integrated_lufs": -14.3,
+  "lra": 2.5,
+  "true_peak_dbfs": -1.1,
+  "silence_ratio": 0.0,
+  "pass": true
+ },
+ "mp4": "projects/aa8b86e3-cab2-4dc5-9077-65fe780d5971/renders/v-3.mp4"
+}
