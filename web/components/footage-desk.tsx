@@ -172,7 +172,7 @@ export function FootageDesk(props: { projectId: string; renderId: string | null;
             <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Finished or skipped ({doneReqs.length})</summary>
               <ul className="mt-1 space-y-1">{doneReqs.map((r) => (
                 <li key={r.id} className="flex items-center gap-2">{r.status === "done" ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{r.title}
-                  {r.status === "skipped" && props.waiting && <button className="underline" onClick={() => act(r.id, () => post(`/api/help-requests/${r.id}`, { action: "reopen" }))}>undo</button>}</li>))}
+                  {r.status === "skipped" && <button className="underline" onClick={() => act(r.id, () => post(`/api/help-requests/${r.id}`, { action: "reopen" }))}>reopen</button>}</li>))}
               </ul></details>
           )}
         </CardContent>
