@@ -268,7 +268,8 @@ function ClipSwap({ scene, post }: { scene: StudioScene; post: (u: string, b: un
           <span className="mr-auto min-w-0 truncate">{a.title}</span>
           {a.tier === "gap" ? <span className="text-muted-foreground">search “{String(a.meta.search_query ?? "")}” · {String(a.meta.source_hint ?? "")}</span> : (
             <>
-              <Badge variant={a.license === "Do Not Use" ? "danger" : "secondary"}>{a.license}</Badge>
+              <Badge variant={a.license === "Do Not Use" ? "danger" : "secondary"}>{String(a.meta?.license_short ?? a.license)}</Badge>
+              {Boolean(a.meta?.auto_rights) && <Badge variant="outline" title="Licence read from the source's own metadata; open the source to double-check">auto-checked</Badge>}
               {a.verified_real && <Badge variant="success">Verified real</Badge>}
               {a.source_url && <a className="underline" href={a.source_url} target="_blank" rel="noreferrer">source</a>}
               {(a.tier === "real" || a.tier === "news_document") && !a.rights_checked && <Button size="sm" variant="outline" onClick={() => setCheck(a)}>Rights check</Button>}

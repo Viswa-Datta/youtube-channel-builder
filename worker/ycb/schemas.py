@@ -99,6 +99,20 @@ class Research(BaseModel):
 
 
 # ------------------------------------------------------------------ Script Agent
+class ChartSpec(BaseModel):
+    """A small bar chart for one scene. Values must come from the research claims (checked by the app)."""
+    title: str = Field(max_length=70)
+    unit: str = Field(default="", max_length=20, description="e.g. 'm', 'USD bn', 'points', 'million people'")
+    labels: list[str] = Field(min_length=2, max_length=8)
+    values: list[float] = Field(min_length=2, max_length=8)
+
+    @model_validator(mode="after")
+    def same_length(self) -> "ChartSpec":
+        if len(self.labels) != len(self.values):
+            raise ValueError("chart labels and values must have the same length")
+        return self
+
+
 class SceneDraft(BaseModel):
     idx: int = Field(ge=0)
     title: str
@@ -106,6 +120,7 @@ class SceneDraft(BaseModel):
     draft: str
     on_screen_text: list[str] = Field(default_factory=list, max_length=6)
     claim_refs: list[int] = Field(default_factory=list, description="indexes into research.claims")
+    chart: ChartSpec | None = Field(default=None, description="only if the claims contain 2-8 comparable numbers")
 
     @field_validator("draft")
     @classmethod

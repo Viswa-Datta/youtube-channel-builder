@@ -175,6 +175,8 @@ def _candidate(c: Ctx, scene: dict, tier: str, kind: str, title: str, source_nam
 def stage_footage(c: Ctx) -> str | None:
     """Find footage for every scene. Downloads only where the source allows it; everything the app may not fetch
     itself (YouTube uploads, unknown locations) becomes a help request. Returns "wait" to pause at the Footage Desk."""
+    if settings.footage_mode != "assisted":
+        return stage_footage_auto(c)
     from ..footage import discovery
     scenes = c.scenes()
     plan = db.q("select * from footage_plan where project_id=%s order by scene_idx, priority", (c.pid,))
@@ -274,6 +276,80 @@ def stage_footage(c: Ctx) -> str | None:
     return "wait" if waiting else None
 
 
+AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 3, 6, 2
+
+
+def stage_footage_auto(c: Ctx) -> None:
+    """Fully automatic footage: only media whose licence the source itself publishes as public domain, CC0 or CC BY
+    (or free stock licences) is fetched and placed, each with source, author and licence logged for the credits.
+    Nothing is downloaded from YouTube, TV or news sites, and the user is never asked to fetch anything.
+    The final human review (Review Studio + publish checklist) shows every item before anything is published."""
+    from ..footage import discovery
+    scenes = c.scenes()
+    plan = db.q("select * from footage_plan where project_id=%s order by scene_idx, priority", (c.pid,))
+    case = _case(c)
+    subject = case.get("case_name") or c.project["title"]
+    subj_words = discovery._words(subject)
+    used = {r["source_url"] for r in db.q("select source_url from assets where project_id=%s and selected and source_url is not null", (c.pid,))}
+    for k, s in enumerate(scenes):
+        needs = [n for n in plan if n["scene_idx"] == s["idx"]]
+        have = db.q1("""select count(*) filter (where kind='clip' and tier<>'stock_broll') v, count(*) filter (where kind='image') i,
+                        count(*) filter (where tier='stock_broll') st from assets where scene_id=%s and selected""", (s["id"],))
+        nv, ni, nst = have["v"], have["i"], have["st"]
+        queries = [n["search_query"] for n in needs if n["tier"] != "stock_broll"]
+        queries += [f"{subject} {w}" for w in [s["title"]]]  # scene-specific fallback
+        queries.append(subject)
+        for q in dict.fromkeys(queries):
+            if nv >= AUTO_MAX_VIDEOS and ni >= AUTO_MAX_IMAGES:
+                break
+            words = discovery._words(q) | subj_words
+            try:
+                found = discovery.free_media(q, 8, words & subj_words or discovery._words(q))
+            except Exception:  # noqa: BLE001
+                found = []
+            for e in found:
+                if e.url in used:
+                    continue
+                video = e.media_type == "video"
+                if (video and nv >= AUTO_MAX_VIDEOS) or (not video and ni >= AUTO_MAX_IMAGES):
+                    continue
+                lic = "Public Domain" if e.license == "Public Domain" or "public" in (e.meta.get("license_short") or "").lower() \
+                    or "cc0" in (e.meta.get("license_short") or "").lower() else "Licensed"
+                db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, agency, release_date, source_url,
+                        license, rights_notes, rights_checked, rights_checked_at, selected, meta)
+                        values (%s,%s,%s,'real',%s,%s,%s,%s,%s,%s,%s,true,now(),true,%s)""",
+                     (c.pid, s["id"], "clip" if video else "image", e.title[:300], e.source, (e.channel or e.source)[:200],
+                      _d(e.published), e.url, lic,
+                      f"Auto-checked from the source's licence metadata: {e.meta.get('license_short') or e.license}. {e.rights_note}"[:1900],
+                      db.jsonb({"media_url": e.media_url, "auto_rights": True, "search_query": q,
+                                **{k2: v for k2, v in e.meta.items() if k2 in ("license_short", "license_url", "nasa_manifest", "identifier",
+                                                                             "collection", "thumb_url")}})))
+                used.add(e.url)
+                nv += video
+                ni += not video
+        # generic B-roll from free stock libraries (only if keys are set) when real footage is thin
+        if nv < 2 and nst < AUTO_MAX_STOCK:
+            for n in [n for n in needs if n["tier"] == "stock_broll"] or [{"search_query": s["title"], "tier": "stock_broll"}]:
+                for cand in sources.search_scene(dict(n))[:AUTO_MAX_STOCK - nst]:
+                    if cand.source_url in used or not cand.media_url:
+                        continue
+                    db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, agency, source_url, license,
+                            rights_notes, is_broll_label, selected, meta)
+                            values (%s,%s,'clip','stock_broll',%s,%s,%s,%s,'Licensed',%s,true,true,%s)""",
+                         (c.pid, s["id"], cand.title, cand.source_name, cand.agency, cand.source_url, cand.rights_note,
+                          db.jsonb({"media_url": cand.media_url, "duration": cand.duration, "auto_rights": True})))
+                    used.add(cand.source_url)
+                    nst += 1
+        for n in needs:
+            db.x("update footage_plan set status=%s where id=%s", ("found" if (nv + ni + nst) else "gap", n["id"]))
+        db.x("delete from assets where scene_id=%s and tier in ('generated','gap') and kind='card'", (s["id"],))
+        db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, license, selected, rights_notes)
+                values (%s,%s,'card','generated',%s,'YouTube Channel Builder','Licensed',true,'Made by the app for this video')""",
+             (c.pid, s["id"], f"Maps, timeline, chart and document graphics, scene {s['idx']}"))
+        c.progress("footage", (k + 1) / len(scenes), f"scene {s['idx']}: {nv} videos, {ni} photos, {nst} B-roll")
+    return None
+
+
 def _yt_instructions(e: dict) -> str:
     return (f"Official video from {e.get('channel') or 'the agency'}"
             f"{' (' + e['published'] + ')' if e.get('published') else ''}. YouTube does not offer a file download and the app "
@@ -293,8 +369,13 @@ def _download(c: Ctx, asset: dict) -> None:
     from ..footage.discovery import UA
     meta = asset["meta"] or {}
     url = meta.get("media_url")
+    if asset["kind"] == "image" and meta.get("thumb_url"):
+        url = meta["thumb_url"]  # 1920 px rendition; originals can be huge TIFFs
     if not url and meta.get("identifier"):  # Internet Archive: resolve the item's video file
         url = sources.internet_archive_media_url(meta["identifier"])
+    if not url and meta.get("nasa_manifest"):
+        from ..footage.discovery import nasa_media_url
+        url = nasa_media_url(meta["nasa_manifest"], "image" if asset["kind"] == "image" else "video")
     if not url:
         raise agents.BusinessRuleViolation(f"asset {asset['id']} has no downloadable file; upload it on the Footage Desk")
     image = asset["kind"] == "image"
@@ -312,11 +393,12 @@ def _download(c: Ctx, asset: dict) -> None:
         if image:
             from PIL import Image
             Image.open(tmp).convert("RGB").save(out, quality=92)
-        elif url.lower().split("?")[0].endswith(".mp4"):
+        elif url.lower().split("?")[0].endswith(".mp4") and not meta.get("auto_rights"):
             tmp.replace(out)
-        else:
+        else:  # normalise to H.264 MP4; automatic picks keep only the first 2 minutes (the edit never uses more)
             from ..media.ff import run as ff
-            ff(["-i", str(tmp), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            ff(["-i", str(tmp), *(["-t", "120"] if meta.get("auto_rights") else []), "-vf",
+                "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "160k", str(out)])
         store().put(out, key, "image/jpeg" if image else "video/mp4")
     db.x("update assets set storage_path=%s where id=%s", (key, asset["id"]))
@@ -326,12 +408,22 @@ def _fetch_selected(c: Ctx) -> None:
     """Download every approved asset that is still only a link (approved on the Footage Desk)."""
     for a in db.q("""select * from assets where project_id=%s and selected and storage_path is null
                      and kind in ('clip','image') and tier in ('real','news_document','stock_broll')""", (c.pid,)):
-        _download(c, a)
+        try:
+            _download(c, a)
+        except Exception as e:  # noqa: BLE001 - a dead link or bad file drops that item, not the whole video
+            if not (a["meta"] or {}).get("auto_rights"):
+                raise
+            meta = dict(a["meta"] or {})
+            meta["download_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            db.x("update assets set selected=false, meta=%s where id=%s", (db.jsonb(meta), a["id"]))
 
 
 # ------------------------------------------------------------------ stage: blur
 def stage_blur(c: Ctx) -> None:
     _fetch_selected(c)
+    from ..agents.niches import preset_for
+    ch = db.q1("select niche, sub_niche from channels where id=%s", (c.project["channel_id"],)) or {}
+    blur_needed = preset_for(ch.get("niche"), ch.get("sub_niche"))["key"] == "true_crime"
     scenes = c.scenes()
     for k, s in enumerate(scenes):
         clips = db.q("""select * from assets where scene_id=%s and selected and kind='clip' and storage_path is not null""", (s["id"],))
@@ -339,6 +431,13 @@ def stage_blur(c: Ctx) -> None:
             db.x("update scenes set blur_status='not_needed' where id=%s and blur_status<>'signed_off'", (s["id"],))
             continue
         for a in clips:
+            if not blur_needed and (a["meta"] or {}).get("auto_rights") and a["tier"] != "news_document":
+                # Licence-checked archive/stock footage in non-crime niches: no private people to protect; keep as is.
+                if (a["meta"] or {}).get("blurred_key") != a["storage_path"]:
+                    meta = dict(a["meta"])
+                    meta["blurred_key"] = a["storage_path"]
+                    db.x("update assets set meta=%s where id=%s", (db.jsonb(meta), a["id"]))
+                continue
             manual = db.q("select * from redaction_plan where asset_id=%s and kind='manual_box'", (a["id"],))
             cuts = db.q("select * from redaction_plan where asset_id=%s and kind='graphic_cutaway'", (a["id"],))
             h = sha(a["storage_path"], [dict(m) for m in manual], [dict(x) for x in cuts], "blur-v1")
@@ -420,6 +519,9 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
     sentences = [x["text"] for x in (s["sentence_timings"] or [])]
     docs = list(s["on_screen_text"])
     pool: list[tuple[str, object]] = [("doc", i) for i in range(len(docs))]
+    chart = next((x.get("chart") for x in (pack.get("script") or {}).get("scenes", []) if x.get("idx") == s["idx"]), None)
+    if chart:
+        pool.insert(0, ("chart", chart))
     if timeline:
         pool.append(("timeline", None))
     # statement cards: substantive sentences (9-32 words) that carry a fact, spread across the scene
@@ -442,6 +544,9 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         if kind == "doc":
             lines = [("> " if k == val else "  ") + d for k, d in enumerate(docs)]
             cards.document_card(out, s["title"], lines, f"Scene {s['idx'] + 1} of {n_scenes}", seed=s["idx"] * 100 + i)
+        elif kind == "chart":
+            cards.chart_card(out, val["title"], val["labels"], [float(v) for v in val["values"]], val.get("unit", ""),
+                             note="Source: research notes for this video (see description)", seed=s["idx"] * 100 + i)
         elif kind == "timeline":
             items = [(t.split(":", 1)[0][:14], t.split(":", 1)[-1].strip()[:60]) for t in timeline[:6]]
             cards.timeline_card(out, items, highlight=min(len(items) - 1, s["idx"] * len(items) // max(1, n_scenes)),

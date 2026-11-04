@@ -41,3 +41,17 @@ to list what is missing.
 
 `worker/scripts/download-models.sh /models` downloads Kokoro, its voices, the YuNet face detector and the plate detector
 (about 360 MB). The Docker image runs it at build time.
+
+## Any-niche automatic footage (worker)
+
+| Variable | What it does | Cost | Where |
+|---|---|---|---|
+| `FOOTAGE_MODE` | `auto` (default): the agent fetches only media whose licence the source publishes as public domain, CC0 or CC BY, plus free stock; it never asks you to fetch clips. `assisted`: also lists official videos it may not download (e.g. agency YouTube uploads) as help requests. | free | Fly secret |
+| `PEXELS_API_KEY` | Free stock video B-roll (any niche) | free | pexels.com/api |
+| `PIXABAY_API_KEY` | Free stock video B-roll (any niche) | free | pixabay.com/api/docs (logged in) |
+| `DATA_GOV_API_KEY` | Smithsonian Open Access (CC0 images) | free | api.data.gov/signup |
+
+Always on, no key: Wikimedia Commons, NASA Image and Video Library, Internet Archive (curated public-domain collections
+only), Library of Congress, Wikipedia (research + page-view popularity), Natural Earth maps.
+Licences accepted automatically: public domain, CC0, CC BY. Rejected: BY-SA, NC, ND, unknown.
+

@@ -60,6 +60,10 @@ class Settings:
     courtlistener_token: str | None = field(default_factory=lambda: _env("COURTLISTENER_TOKEN"))
     nara_api_key: str | None = field(default_factory=lambda: _env("NARA_API_KEY"))
     youtube_api_key: str | None = field(default_factory=lambda: _env("YOUTUBE_API_KEY"))  # YouTube Data API key: search only
+    data_gov_api_key: str | None = field(default_factory=lambda: _env("DATA_GOV_API_KEY"))  # api.data.gov: Smithsonian Open Access
+    # auto: the agent fetches only freely licensed media and never asks the user to save clips (default).
+    # assisted: also finds official videos it may not download (e.g. agency YouTube uploads) and asks the user.
+    footage_mode: str = field(default_factory=lambda: _env("FOOTAGE_MODE", "auto"))
 
     # YouTube
     google_client_id: str | None = field(default_factory=lambda: _env("GOOGLE_OAUTH_CLIENT_ID"))

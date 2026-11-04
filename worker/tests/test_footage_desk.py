@@ -38,6 +38,8 @@ def setup(db, project, monkeypatch):
         [Evidence("downloadable", "Wikimedia Commons", "Grand Teton map", "https://commons.wikimedia.org/wiki/File:x.png",
                   media_url="https://upload.wikimedia.org/x.png", license="Public Domain", media_type="image")] if media == "image" else []))
     monkeypatch.setattr(sources, "search_scene", lambda need: [])
+    from ycb.config import settings
+    monkeypatch.setattr(settings, "footage_mode", "assisted")
     return {"pid": pid, "rid": rid, "s0": project["scene"], "s1": s1}
 
 
@@ -125,7 +127,7 @@ def test_visual_plan_chunks_and_fills_skipped_scenes(monkeypatch):
     monkeypatch.setattr(core, "complete_json", fake)
     monkeypatch.setattr(core.db, "q1", lambda *a, **k: {"case_info": {"case_name": "Test case"}})
     draft = NS(scenes=[NS(idx=i, title=f"S{i}", draft="x") for i in range(9)])
-    plan = core.visual_plan({"id": "p", "title": "T", "idea_id": "i"}, {"user_id": "u"}, draft, "gemini", "m", None)
+    plan = core.visual_plan({"id": "p", "title": "T", "idea_id": "i", "channel_id": "c"}, {"user_id": "u"}, draft, "gemini", "m", None)
     assert {n.scene_idx for n in plan.needs} == set(range(9))
     assert calls[0] == [0, 1, 2, 3] and [2] in calls  # grouped, then re-asked only for the skipped scene
     fb = [n for n in plan.needs if n.scene_idx == 5]
@@ -144,3 +146,54 @@ def test_short_narration_is_topped_up(monkeypatch):
     monkeypatch.setattr(core, "complete_json", fake)
     text = core.expand_scene({"id": "p", "title": "T"}, {"idx": 1, "title": "S", "draft": "d"}, 533, [], "gemini", "m", None, "u", "r")
     assert len(text.split()) >= 0.9 * 533 and len(seen) == 3  # first draft + two continuations
+
+
+
+def test_auto_footage_selects_only_licence_checked_media(db, project, monkeypatch):
+    from ycb.footage import discovery, sources
+    from ycb.footage.discovery import Evidence
+    from ycb.stages import pipeline
+    pid = project["project"]
+    idea = db.execute("""insert into ideas (channel_id, title, hook, angle, demand_score, competition_score, feasibility_score, case_info)
+                         values (%s,'Panama Canal','h','a',7,5,8,%s) returning id""",
+                      (project["channel"], Jsonb({"case_name": "Panama Canal"}))).fetchone()["id"]
+    db.execute("update projects set idea_id=%s where id=%s", (idea, pid))
+    db.execute("update scenes set title='The locks' where id=%s", (project["scene"],))
+    db.execute("insert into footage_plan (project_id, scene_idx, priority, tier, description, search_query, source_hint) values (%s,0,1,'real','locks','Panama Canal locks','Commons')", (pid,))
+    rid = db.execute("insert into renders (project_id, version) values (%s,1) returning id", (pid,)).fetchone()["id"]
+    pool = [Evidence("downloadable", "Wikimedia Commons", "Panama Canal locks.webm", "https://commons/x1", media_url="https://u/x1.webm",
+                     channel="US Navy", license="Public Domain", media_type="video", meta={"license_short": "Public domain"}),
+            Evidence("downloadable", "Wikimedia Commons", "Panama Canal aerial.jpg", "https://commons/x2", media_url="https://u/x2.jpg",
+                     channel="J. Doe", license="Licensed", media_type="image", meta={"license_short": "CC BY 4.0", "thumb_url": "https://u/t2.jpg"}),
+            Evidence("downloadable", "NASA", "Panama Canal from orbit", "https://images.nasa.gov/details/abc", channel="NASA JSC",
+                     license="Public Domain", media_type="image", meta={"nasa_manifest": "https://m/abc", "license_short": "Public domain (NASA)"})]
+    calls = []
+    monkeypatch.setattr(discovery, "free_media", lambda q, n=6, words=None: calls.append(q) or list(pool))
+    monkeypatch.setattr(sources, "search_scene", lambda need: [])
+    from ycb.config import settings
+    monkeypatch.setattr(settings, "footage_mode", "auto")
+    c = pipeline.Ctx({"render_id": str(rid), "stage": "footage"}, HB())
+    assert pipeline.stage_footage(c) is None  # never pauses
+    rows = db.execute("select * from assets where project_id=%s and tier='real' order by created_at", (pid,)).fetchall()
+    assert len(rows) == 3 and all(r["selected"] and r["rights_checked"] and r["meta"]["auto_rights"] for r in rows)
+    assert {r["license"] for r in rows} == {"Public Domain", "Licensed"} and all(r["agency"] for r in rows)
+    assert db.execute("select count(*) n from help_requests where project_id=%s", (pid,)).fetchone()["n"] == 0
+    # publish checklist sees every selected item as sourced and rights-checked
+    chk = db.execute("select publish_checklist(%s,%s) c", (pid, rid)).fetchone()["c"]
+    items = {i["key"]: i for i in chk["items"]}
+    assert items["rights_checked"]["pass"] and items["footage_logged"]["pass"]
+    # re-running does not duplicate
+    pipeline.stage_footage(c)
+    assert db.execute("select count(*) n from assets where project_id=%s and tier='real'", (pid,)).fetchone()["n"] == 3
+
+
+def test_licence_filter_and_presets():
+    from ycb.agents.niches import preset_for
+    from ycb.footage.discovery import license_ok
+    assert license_ok("CC BY 4.0") and license_ok("Public domain") and license_ok("CC0")
+    assert not license_ok("CC BY-SA 4.0") and not license_ok("CC BY-NC 2.0") and not license_ok("CC BY-ND 3.0") and not license_ok("")
+    assert preset_for("F1 racing")["key"] == "motorsport"
+    assert preset_for("Architectural marvels")["key"] == "architecture"
+    assert preset_for("Geopolitics")["key"] == "geopolitics"
+    assert preset_for("True Crime Documentary")["key"] == "true_crime"
+    assert preset_for("Cooking")["key"] == "generic"

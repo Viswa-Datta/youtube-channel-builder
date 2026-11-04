@@ -280,3 +280,180 @@ def probe_case(case_name: str, location: str | None, agency: str | None, search_
     return {"verified": bool(ref), "reference": ref.dict() if ref else None, "evidence": evidence,
             "feasibility": min(10, score), "youtube_checked": bool(settings.youtube_api_key) and "youtube" not in LAST_ERRORS,
             "youtube_error": LAST_ERRORS.get("youtube"), "youtube_results": len(yt)}
+
+
+# ================================================================ automatic (any-niche) footage
+# Licenses an app may use without a person negotiating anything, judged from the source's own metadata.
+# Share-alike (BY-SA), non-commercial (NC) and no-derivatives (ND) are excluded: a narrated, cropped, zoomed video is an
+# adaptation, which would put share-alike terms on the whole video, and NC/ND forbid monetised edits.
+def license_ok(license_short: str | None, license_url: str | None = None) -> bool:
+    s = f"{license_short or ''} {license_url or ''}".lower()
+    if not s.strip():
+        return False
+    if any(t in s for t in ("-sa", " sa ", "by-sa", "sharealike", "share-alike", "-nc", "noncommercial", "non-commercial", "-nd", "noderiv", "fair use")):
+        return False
+    return any(t in s for t in ("public domain", "publicdomain", "pd-", "pd ", "cc0", "cc-zero", "no restrictions", "cc by ", "cc-by-",
+                                "cc by 2", "cc by 3", "cc by 4", "licenses/by/", "attribution"))
+
+
+def nasa(query: str, n: int = 8, media: str = "video") -> list[Evidence]:
+    """NASA Image and Video Library: NASA-produced media is generally not copyrighted (credit NASA).
+    Items credited to a non-NASA photographer/organisation are skipped."""
+    r = _get("https://images-api.nasa.gov/search", params={"q": query, "media_type": media, "page_size": n})
+    out = []
+    for it in (r.json().get("collection", {}).get("items", [])[:n] if r else []):
+        d = (it.get("data") or [{}])[0]
+        credit = (d.get("photographer") or d.get("secondary_creator") or "NASA")
+        if not re.search(r"\bnasa\b|jpl|goddard|johnson|kennedy|marshall|ames|langley|glenn|armstrong|stennis|\bksc\b|\bjsc\b|\bmsfc\b|\bgsfc\b",
+                         f"{credit} {d.get('center', '')}", re.I):
+            continue  # third-party copyright possible
+        if is_graphic(d.get("title", "")):
+            continue
+        out.append(Evidence("downloadable", "NASA", d.get("title", "")[:300], f"https://images.nasa.gov/details/{d.get('nasa_id')}",
+                            channel=f"NASA {d.get('center') or ''}".strip(), published=(d.get("date_created") or "")[:10] or None,
+                            license="Public Domain", rights_note="NASA media: not copyrighted in the US; credit NASA. Do not imply NASA endorsement.",
+                            media_type=media, meta={"nasa_manifest": it.get("href"), "license_short": "Public domain (NASA)",
+                                                    "keywords": d.get("keywords", [])[:10], "description": (d.get("description") or "")[:400]}))
+    return out
+
+
+def nasa_media_url(manifest_url: str, media: str = "video") -> str | None:
+    r = _get(manifest_url)
+    files = r.json() if r else []
+    prefs = ("~orig.mp4", "~large.mp4", "~medium.mp4", "~mobile.mp4") if media == "video" else ("~large.jpg", "~orig.jpg", "~medium.jpg")
+    for p in prefs:
+        for f in files:
+            if f.endswith(p):
+                return f.replace("http://", "https://")
+    return None
+
+
+def smithsonian(query: str, n: int = 8) -> list[Evidence]:
+    """Smithsonian Open Access: only items marked CC0 (public domain dedication). Needs an api.data.gov key."""
+    if not settings.data_gov_api_key:
+        return []
+    r = _get("https://api.si.edu/openaccess/api/v1.0/search",
+             params={"q": f"{query} AND online_media_type:Images", "rows": n, "api_key": settings.data_gov_api_key})
+    out = []
+    for row in ((r.json().get("response") or {}).get("rows", []) if r else []):
+        c = row.get("content", {})
+        dnr = c.get("descriptiveNonRepeating", {})
+        media = ((dnr.get("online_media") or {}).get("media") or [])
+        for m in media[:1]:
+            access = ((m.get("usage") or {}).get("access") or "")
+            if access.upper() != "CC0" or m.get("type") != "Images" or is_graphic(row.get("title", "")):
+                continue
+            url = m.get("content")
+            out.append(Evidence("downloadable", "Smithsonian Open Access", row.get("title", "")[:300],
+                                dnr.get("record_link") or dnr.get("guid") or url, media_url=url,
+                                channel=(dnr.get("data_source") or "Smithsonian"), license="Public Domain",
+                                rights_note="Smithsonian Open Access, CC0 (no rights reserved).", media_type="image",
+                                meta={"license_short": "CC0", "unit": row.get("unitCode")}))
+    return out
+
+
+def subject_article(name: str) -> dict | None:
+    """The English Wikipedia article for a subject (exact title or redirect), or None. Disambiguation pages don't count."""
+    r = _get("https://en.wikipedia.org/w/api.php", params={"action": "query", "titles": name, "redirects": 1, "format": "json",
+                                                           "prop": "pageprops|info", "inprop": "url"})
+    for p in ((r.json().get("query") or {}).get("pages") or {}).values() if r else []:
+        if "missing" in p or "disambiguation" in (p.get("pageprops") or {}):
+            continue
+        return {"title": p["title"], "url": p.get("fullurl") or "https://en.wikipedia.org/wiki/" + p["title"].replace(" ", "_")}
+    return None
+
+
+def pageviews(title: str, days: int = 60) -> dict | None:
+    """Real popularity: average daily Wikipedia views over `days` and the last-7-days trend vs the period before."""
+    import datetime as dt
+    end = dt.date.today() - dt.timedelta(days=1)
+    start = end - dt.timedelta(days=days - 1)
+    t = title.replace(" ", "_")
+    r = _get(f"https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/"
+             f"{requests.utils.quote(t, safe='')}/daily/{start:%Y%m%d}/{end:%Y%m%d}")
+    items = (r.json().get("items") or []) if r else []
+    if not items:
+        return None
+    v = [i.get("views", 0) for i in items]
+    avg = sum(v) / len(v)
+    last7 = sum(v[-7:]) / max(1, len(v[-7:]))
+    before = sum(v[:-7]) / max(1, len(v[:-7]))
+    return {"avg_daily": round(avg), "last7_daily": round(last7), "trend": round(last7 / before, 2) if before else None}
+
+
+def demand_from_views(pv: dict | None) -> int | None:
+    """Map average daily Wikipedia views to 0-10 (100/day ~ 3, 1k ~ 5, 10k ~ 7, 100k ~ 9), +1 if trending up 50%+."""
+    import math
+    if not pv:
+        return None
+    s = 1 + 2 * math.log10(max(1, pv["avg_daily"]))
+    if pv.get("trend") and pv["trend"] >= 1.5:
+        s += 1
+    return int(max(0, min(10, round(s - 1))))
+
+
+TRUSTED_IA_COLLECTIONS = ("prelinger", "fedflix", "usgovernmentdocuments", "nasa", "us_government", "national_archives",
+                          "dod", "navy", "army", "airforce", "noaa", "usgs", "nps")
+
+
+def probe_subject(subject: str, search_terms: list[str]) -> dict:
+    """Any-niche idea check: the subject's Wikipedia article (exact title or redirect), real popularity, and how much
+    free, license-checked media the agent can fetch automatically."""
+    art = subject_article(subject)
+    if not art:  # fall back to search, but only accept an article whose title names the subject
+        hits = case_articles(subject, wikipedia(subject, 5))
+        art = {"title": hits[0].title, "url": hits[0].url} if hits else None
+    pv = pageviews(art["title"]) if art else None
+    words = _words(subject)
+    media: list[Evidence] = []
+    for q in ([subject] + [t for t in search_terms if t and t.lower() != subject.lower()])[:2]:
+        media += free_media(q, 6, words)
+    seen, uniq = set(), []
+    for e in media:
+        if e.url not in seen:
+            seen.add(e.url)
+            uniq.append(e)
+    vids = sum(1 for e in uniq if e.media_type == "video")
+    imgs = sum(1 for e in uniq if e.media_type == "image")
+    feas = 1 + min(5, vids) + min(4, (imgs + 1) // 2)
+    if not art:
+        feas = min(feas, 2)
+    return {"verified": bool(art), "reference": {"title": art["title"], "url": art["url"], "source": "Wikipedia"} if art else None,
+            "evidence": [e.dict() for e in uniq[:12]], "feasibility": min(10, feas), "pageviews": pv,
+            "demand": demand_from_views(pv), "free_videos": vids, "free_images": imgs}
+
+
+def free_media(query: str, n: int = 6, words: set[str] | None = None) -> list[Evidence]:
+    """Everything the agent may download and use automatically for a query, from every free source, license-filtered."""
+    def relevant(e: Evidence) -> bool:
+        if not words:
+            return True
+        text = e.title + " " + " ".join(e.meta.get("keywords") or []) + " " + (e.meta.get("description") or "")
+        return len(words & _words(text)) >= min(2, len(words))
+    out: list[Evidence] = []
+    with ThreadPoolExecutor(5) as ex:
+        futs = [ex.submit(wikimedia_commons, query, n, "video"), ex.submit(wikimedia_commons, query, n, "image"),
+                ex.submit(nasa, query, n, "video"), ex.submit(nasa, query, n, "image"), ex.submit(internet_archive, query, n),
+                ex.submit(smithsonian, query, n)]
+        for f in futs:
+            try:
+                out += f.result()
+            except Exception:  # noqa: BLE001 - one source failing never stops the search
+                pass
+    keep = []
+    for e in out:
+        if is_graphic(e.title) or not relevant(e):
+            continue
+        if e.source == "Wikimedia Commons":
+            if not license_ok(e.meta.get("license_short"), e.meta.get("license_url")):
+                continue
+            if e.media_type == "image" and (e.meta.get("size") or 0) < 150_000:
+                continue  # icons, logos, thumbnails
+        elif e.source == "Internet Archive":
+            # Self-labelled uploads are not trusted: only curated public-domain film and government collections.
+            coll = (e.meta.get("collection") or "").lower()
+            if e.license != "Public Domain" or not any(c in coll for c in TRUSTED_IA_COLLECTIONS):
+                continue
+            e.media_type = "video"
+        keep.append(e)
+    return keep

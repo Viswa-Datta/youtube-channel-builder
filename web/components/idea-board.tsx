@@ -12,7 +12,8 @@ type Idea = {
   id: string; title: string; hook: string; angle: string; pillar: string | null; demand_score: number; competition_score: number;
   feasibility_score: number; est_cost_usd: number; rank_score: number; status: string; rationale: string | null;
   case_info?: { case_name?: string; location?: string; year?: number; agency?: string; case_status?: string;
-    public_footage?: string[]; reference?: { title: string; url: string } | null; youtube_checked?: boolean; youtube_error?: string } | null;
+    public_footage?: string[]; reference?: { title: string; url: string } | null; youtube_checked?: boolean; youtube_error?: string;
+    pageviews?: { avg_daily: number; last7_daily: number; trend: number | null } | null; free_videos?: number; free_images?: number } | null;
   footage_evidence?: { kind: string; source: string; title: string; url: string; official?: boolean; channel?: string | null; media_type?: string }[] | null;
   case_verified?: boolean;
 };
@@ -30,10 +31,14 @@ function CaseDetails({ i }: { i: Idea }) {
       <div className="text-muted-foreground">{[c.location, c.year, c.agency, c.case_status].filter(Boolean).join(" · ")}</div>
       <div className="flex flex-wrap gap-1">
         {i.case_verified
-          ? <a href={c.reference?.url} target="_blank" rel="noreferrer"><Badge variant="success">Case confirmed ↗</Badge></a>
+          ? <a href={c.reference?.url} target="_blank" rel="noreferrer"><Badge variant="success">Wikipedia ✓ ↗</Badge></a>
           : <Badge variant="danger">Not confirmed</Badge>}
+        {c.pageviews && <Badge variant="outline" title="Average daily Wikipedia views, last 60 days">
+          {c.pageviews.avg_daily.toLocaleString()} views/day{c.pageviews.trend && c.pageviews.trend >= 1.5 ? " · trending ↑" : ""}</Badge>}
+        {c.free_videos !== undefined && <Badge variant={(c.free_videos ?? 0) > 0 ? "success" : "outline"}>{c.free_videos} free videos</Badge>}
+        {c.free_images !== undefined && <Badge variant="secondary">{c.free_images} free photos</Badge>}
         {official > 0 && <Badge variant="success">{official} official video{official > 1 ? "s" : ""}</Badge>}
-        {files > 0 && <Badge variant="secondary">{files} free file{files > 1 ? "s" : ""}</Badge>}
+        {files > 0 && c.free_videos === undefined && <Badge variant="secondary">{files} free file{files > 1 ? "s" : ""}</Badge>}
         {c.youtube_error ? <Badge variant="danger" title={c.youtube_error}>YouTube search failed</Badge>
           : c.youtube_checked === false && <Badge variant="outline">YouTube not searched</Badge>}
       </div>

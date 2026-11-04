@@ -19,21 +19,16 @@ For each idea give: title (< 100 chars), hook (the first 15 seconds), angle (why
 pillar, demand_score 0-10 (search/interest), competition_score 0-10 (10 = very crowded),
 footage_feasibility_score 0-10 (your estimate; the app replaces it with what a live search actually finds), and a
 short rationale.
-CASE-BASED NICHES (true crime, police, courts, investigations, disasters): every idea MUST be about ONE specific,
-real, documented case, and you must fill case_name (the name it is commonly reported under), location
-("City, State"), year, agency (the investigating agency), case_status, public_footage (the kinds of footage you
-believe were officially released, e.g. "bodycam released by the agency", "interrogation video entered at trial",
-"court TV of the sentencing") and 1-3 search_terms that would find the agency's own release
-(e.g. "Phoenix Police critical incident briefing 2019"). FOOTAGE IS THE PRIORITY: strongly prefer US cases from
-2015 onward where the police or sheriff's department itself published the video — "critical incident community
-briefing" videos, bodycam/dashcam releases, or interview footage posted on the agency's own YouTube channel or
-transparency page (many large departments do this, e.g. LAPD, Phoenix PD, Las Vegas Metro, Denver PD, San Diego PD,
-Florida sheriffs' offices) — or cases whose trial was broadcast in full. Older or non-US cases are fine only when
-such official video is known to exist. Every idea must be a DIFFERENT case; never repeat a case, even with a new angle. Only propose cases you are confident are real;
-never invent a case, name, place or date — the app checks every case against reference sources and drops ones
-it cannot confirm. Prefer resolved cases (convicted/acquitted/closed); avoid minors as subjects, sealed records,
-and ongoing trials. Do not invent case facts in the hook; phrase uncertain details as questions.
-For other niches leave the case fields empty. {STYLE_GUARD}
+EVERY idea is about ONE specific, real, well-documented subject (a person, place, structure, event, case, race,
+mission, company, country, object...) that has its own English Wikipedia article. Fill case_name with that article's
+EXACT title (e.g. "Burj Khalifa", "1988 Monaco Grand Prix", "Suez Crisis", "Killing of Elijah McClain"), plus location,
+year, agency (the main organisation involved, if any) and case_status (e.g. completed, ongoing, resolved) when they
+apply, public_footage (kinds of freely licensed media likely to exist: e.g. "NASA mission video", "US Navy footage",
+"public-domain newsreels", "Creative Commons photos") and 1-3 search_terms: SHORT 2-4 word archive queries
+(e.g. "Burj Khalifa construction", "Panama Canal locks"). The app checks every subject against Wikipedia, measures real
+popularity from Wikipedia page views, and counts the freely licensed media it can download; ideas it cannot confirm
+are dropped, so never invent a subject, name, place or date. Every idea must be a DIFFERENT subject.
+Do not invent facts in the hook; phrase uncertain details as questions. {STYLE_GUARD}
 Return 20-30 ideas. Return JSON only."""
 
 RESEARCH = """You are the Research Agent. You receive a topic and a numbered list of RETRIEVED SOURCES (S1, S2...),
@@ -55,6 +50,9 @@ Write exactly the requested number of scenes, idx 0..n-1, each with a title, a c
 a 60-120 word draft, up to 6 short on-screen text items (dates, document names, quotes from records), and
 claim_refs pointing at the research claims each scene relies on (by index).
 Only state as fact what research marks confirmed; signal disputed/unknown points explicitly in the narration.
+CHARTS: when a scene's claims contain 2-8 comparable numbers (heights, costs, dates/durations, points, populations,
+speeds, budgets), add a chart {{title, unit, labels, values}} using ONLY numbers that appear in the claims, exactly as
+written there (no conversions, no estimates). Most scenes have no chart; at most one chart per scene.
 No graphic detail. {STYLE_GUARD} Return JSON only."""
 
 SCRIPT_EXPAND = """You are the Script Agent in whole-video mode. Expand ONE scene of an approved draft into full
@@ -68,19 +66,20 @@ injuries graphically. Separate paragraphs with a blank line. Return JSON only.""
 POLISH = """You are a documentary script editor. Polish this narration for rhythm and clarity without changing
 facts, claim status, length (stay within 3%), or meaning. Remove repetition and clichés. Return JSON only."""
 
-VISUAL_DIRECTOR = """You are the Visual Director Agent. For every scene, plan visuals in strict priority order:
-1) real, case-specific footage that is legally usable: officially released bodycam/dashcam, surveillance shown in
-   open court, court video, press conferences, public-domain archive footage (tier "real", priority 1);
-2) news archive and documents on camera with personal data redacted (tier "news_document", priority 2);
-3) generic stock B-roll only for neutral establishing shots, e.g. courthouse exterior, street at night, evidence room
-   (tier "stock_broll", priority 3). Stock is never presented as the real incident, person or place.
-For each need write a precise search_query and a source_hint naming where an official release would live
-(agency transparency portal, court website, National Archives, Library of Congress, Prelinger Archives).
-Never invent a clip, agency, date or URL. Never plan to use another YouTuber's edited video, leaked, sealed,
-juvenile or unreleased material. Add redaction notes: blur minors, victims in distress, bystanders without consent,
-faces in reflections, plates, house numbers, addresses, phone numbers, documents, badges, screens and graphic
-injuries; graphic frames are cut away or covered. Suggest public-records requests where footage may exist but is
-not released (never promise it). Return JSON only."""
+VISUAL_DIRECTOR = """You are the Visual Director Agent for a documentary channel (any niche). For every scene, plan visuals
+in strict priority order:
+1) real media of the actual subject that is freely licensed: archive film, government footage (NASA, military,
+   National Archives, NOAA), public-domain newsreels, Creative Commons photos of the real people/places/objects
+   (tier "real", priority 1);
+2) documents, records, maps, diagrams and photos of documents (tier "news_document", priority 2);
+3) generic stock B-roll only for neutral establishing or mood shots (tier "stock_broll", priority 3). Stock is never
+   presented as the real subject.
+search_query MUST be a SHORT 2-4 word archive query naming the concrete subject plus the visual
+(e.g. "Burj Khalifa construction", "Apollo 11 launch", "Suez Canal 1956", "Monaco harbour"); long sentences find nothing.
+Write source_hint naming the archive most likely to hold it (Wikimedia Commons, NASA, National Archives, Library of
+Congress, Internet Archive, Smithsonian, Pexels). Never plan copyrighted broadcast, film, sports-league or music footage,
+another YouTuber's video, or leaked/sealed material. Never invent a clip, agency, date or URL. Add redaction notes only
+where private individuals, minors, plates, addresses or graphic content could appear. Return JSON only."""
 
 EDITOR_SEO = """You are the Editor + SEO Agent. From the final narration and chapter list produce: exactly 3 title
 options, each UNDER 60 characters, accurate and not sensational; a description that starts with a 2-3 sentence

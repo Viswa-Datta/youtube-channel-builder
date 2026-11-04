@@ -126,6 +126,36 @@ def timeline_card(out: Path, items: list[tuple[str, str]], highlight: int, title
     return _save(_vignette(_grain(img, seed)), out)
 
 
+def chart_card(out: Path, title: str, labels: list[str], values: list[float], unit: str = "", note: str = "", seed: int = 0) -> Path:
+    """Horizontal bar chart in the card style; the largest bar is highlighted. Values are drawn exactly as sourced."""
+    img = canvas()
+    d = ImageDraw.Draw(img)
+    W, H = img.size
+    d.text((W * 0.1, H * 0.1), title.upper(), font=font(SANS_B, 34), fill=ACCENT)
+    if unit:
+        d.text((W * 0.1, H * 0.1 + 52), unit, font=font(SANS, 28), fill=MUTED)
+    n = len(values)
+    top, bottom = H * 0.26, H * 0.86
+    row = (bottom - top) / n
+    bar_h = min(70, row * 0.62)
+    label_w = W * 0.26
+    x0, x1 = W * 0.1 + label_w, W * 0.86
+    vmax = max(max(values), 1e-9)
+    hi = values.index(max(values))
+
+    def fmt(v: float) -> str:
+        return f"{int(v):,}" if float(v).is_integer() else f"{v:,.2f}".rstrip("0").rstrip(".")
+    for i, (lab, v) in enumerate(zip(labels, values)):
+        y = top + row * i + (row - bar_h) / 2
+        d.text((W * 0.1, y + bar_h / 2), textwrap.shorten(lab, 26, placeholder="…"), font=font(SANS, 30), fill=INK, anchor="lm")
+        w = max(4, (x1 - x0) * (v / vmax)) if v > 0 else 4
+        d.rectangle([x0, y, x0 + w, y + bar_h], fill=ACCENT if i == hi else (92, 98, 110))
+        d.text((x0 + w + 16, y + bar_h / 2), fmt(v), font=font(SANS_B, 30), fill=INK, anchor="lm")
+    if note:
+        d.text((W * 0.1, H * 0.92), note, font=font(SANS, 22), fill=MUTED)
+    return _save(_vignette(_grain(img, seed)), out)
+
+
 def statement_card(out: Path, text: str, label: str, seed: int = 0) -> Path:
     img = canvas()
     d = ImageDraw.Draw(img)

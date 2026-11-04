@@ -87,7 +87,10 @@ def ideas(job: dict) -> dict:
     ledger.ensure_within_cap(job["user_id"], pricing.estimate("ideas", tier)["total_usd"], "Ideas Agent")
     existing = [r["title"] for r in db.q("select title from ideas where channel_id=%s", (ch["id"],))] + \
         [f"case: {r['c']}" for r in db.q("select distinct case_info->>'case_name' c from ideas where channel_id=%s and case_info ? 'case_name'", (ch["id"],))]
+    from .niches import preset_for
+    pre = preset_for(ch["niche"], ch["sub_niche"])
     user = (f"Channel: {json.dumps((kit or {}).get('selected') or {})}\nNiche: {ch['niche']} / {ch['sub_niche'] or ''}\n"
+            f"Subjects for this niche: {pre['subjects']}.\nGuidance: {pre['ideas']}\nSafety: {pre['safety']}\n"
             f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
             f"Already have (do not repeat): {json.dumps(existing[:80])}")
     batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
@@ -111,9 +114,11 @@ def ideas(job: dict) -> dict:
         pr = probes.get(k)
         if pr is not None:
             i.footage_feasibility_score = pr["feasibility"]  # measured, not guessed
+            if pr.get("demand") is not None:
+                i.demand_score = pr["demand"]  # real Wikipedia page views, not guessed
         rows.append((i, pr))
     # Drop cases nothing could confirm, as long as enough confirmed ones remain; otherwise keep them, flagged.
-    confirmed = [r for r in rows if r[1] is None or r[1]["verified"] or r[1]["evidence"]]
+    confirmed = [r for r in rows if r[1] is None or r[1]["verified"]]
     if len(confirmed) >= 10:
         rows = confirmed
     ranked = sorted(rows, key=lambda r: (rank_score(r[0]), bool(r[1] and r[1]["verified"])), reverse=True)
@@ -123,7 +128,10 @@ def ideas(job: dict) -> dict:
                                    "search_terms": i.search_terms,
                                    "reference": (pr or {}).get("reference"),
                                    "youtube_checked": (pr or {}).get("youtube_checked"),
-                                   "youtube_error": (pr or {}).get("youtube_error")}.items() if v not in (None, [], "")}
+                                   "youtube_error": (pr or {}).get("youtube_error"),
+                                   "pageviews": (pr or {}).get("pageviews"),
+                                   "free_videos": (pr or {}).get("free_videos"),
+                                   "free_images": (pr or {}).get("free_images")}.items() if v not in (None, [], "")}
         db.x("""insert into ideas (channel_id, batch, title, hook, angle, pillar, demand_score, competition_score,
                 feasibility_score, est_cost_usd, rank_score, position, rationale, case_info, footage_evidence, case_verified)
                 values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -140,10 +148,15 @@ def probe_ideas(ideas: list) -> dict[int, dict]:
     from ..footage.discovery import probe_case
     todo = [(k, i) for k, i in enumerate(ideas) if i.case_name]
 
+    from ..config import settings as _settings
+    from ..footage.discovery import probe_subject
+
     def one(ki):
         k, i = ki
         try:
-            return k, probe_case(i.case_name, i.location, i.agency, i.search_terms)
+            if _settings.footage_mode == "assisted":
+                return k, probe_case(i.case_name, i.location, i.agency, i.search_terms)
+            return k, probe_subject(i.case_name, i.search_terms)
         except Exception as e:  # noqa: BLE001
             return k, {"verified": False, "reference": None, "evidence": [], "feasibility": i.footage_feasibility_score,
                        "error": str(e)[:200]}
@@ -309,6 +322,8 @@ def production_pack(job: dict) -> dict:
         raise BusinessRuleViolation(f"Script Agent returned {len(draft.scenes)} scenes, expected {n_scenes}")
     for c in draft.scenes:  # a pointer to a claim that does not exist is dropped (the claim list is the source of truth)
         c.claim_refs = [r for r in c.claim_refs if 0 <= r < len(res.claims)]
+        if c.chart and not chart_numbers_sourced(c.chart, [x.claim for x in res.claims]):
+            c.chart = None  # a number we cannot find in the research never reaches the screen
 
     db.x("delete from scenes where project_id=%s", (project["id"],))
     for s in draft.scenes:
@@ -339,6 +354,22 @@ def production_pack(job: dict) -> dict:
     return {"scenes": n_scenes, "claims": len(res.claims), "footage_needs": len(plan.needs)}
 
 
+def _nums(text: str) -> set[float]:
+    out = set()
+    for m in re.finditer(r"\d[\d,]*(?:\.\d+)?", text):
+        try:
+            out.add(round(float(m.group().replace(",", "")), 4))
+        except ValueError:
+            pass
+    return out
+
+
+def chart_numbers_sourced(chart, claims: list[str]) -> bool:
+    """Every value in the chart must literally appear in a research claim."""
+    pool = set().union(*(_nums(c) for c in claims)) if claims else set()
+    return all(round(float(v), 4) in pool for v in chart.values)
+
+
 def visual_plan(project: dict, job: dict, draft, prov: str, model: str, fx: str | None):
     """Visual Director in groups of 4 scenes (long videos overwhelm one call). Scenes a call skips are asked for
     again once; if still missing they get an honest documents/maps plan, never invented footage."""
@@ -354,6 +385,9 @@ def visual_plan(project: dict, job: dict, draft, prov: str, model: str, fx: str 
     idea = db.q1("select case_info from ideas where id=%s", (project["idea_id"],)) if project["idea_id"] else None
     case = (idea or {}).get("case_info") or {}
     case_line = " · ".join(str(case[k]) for k in ("case_name", "location", "year", "agency") if case.get(k))
+    from .niches import preset_for
+    ch = db.q1("select niche, sub_niche from channels where id=%s", (project["channel_id"],)) or {}
+    pre = preset_for(ch.get("niche"), ch.get("sub_niche"))
     needs, reds, foia = [], [], []
     groups = [draft.scenes[i:i + 4] for i in range(0, len(draft.scenes), 4)]
     for g in groups:
@@ -362,7 +396,7 @@ def visual_plan(project: dict, job: dict, draft, prov: str, model: str, fx: str 
         for attempt in range(2):
             todo = [s for s in g if s.idx not in got]
             txt = "\n".join(f"Scene {s.idx}: {s.title}\n{s.draft}" for s in todo)
-            ask = (f"Topic: {project['title']}\nCase: {case_line or '-'}\n"
+            ask = (f"Topic: {project['title']}\nSubject: {case_line or '-'}\nNiche visual guidance: {pre['visuals']}\n"
                    f"Plan visuals for EXACTLY these scene numbers: {[s.idx for s in todo]} (every one of them, using these "
                    f"scene_idx values).\n\n{txt}")
             try:
