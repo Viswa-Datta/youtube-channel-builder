@@ -208,3 +208,28 @@ def test_tier_without_key_falls_back_to_configured_provider(monkeypatch):
     assert prov == "gemini" and model
     prov, model, _ = core.llm_choice({"llm_provider": "openai", "llm_model": "gpt-4o-mini"}, "standard")
     assert prov == "gemini"
+
+
+def test_ideas_in_two_halves(db, user, monkeypatch):
+    from ycb.agents import core
+    from ycb.schemas import Idea, IdeaPart
+    ch = db.execute("insert into channels (user_id, niche, target_minutes) values (%s,'Architectural marvels',12) returning id", (user,)).fetchone()["id"]
+    asks = []
+
+    def fake(out, user, idem, **kw):
+        asks.append(user)
+        n = 13 if idem.endswith(":0") else 12
+        base = len(asks) * 100
+        return IdeaPart(ideas=[Idea(title=f"The story of Subject {base + i}", hook="A hook that is long enough", angle="An angle that is long enough",
+                                    pillar="p", demand_score=5, competition_score=5, footage_feasibility_score=5, rationale="r",
+                                    case_name=f"Subject {base + i}") for i in range(n)]), None
+    monkeypatch.setattr(core, "complete_json", fake)
+    monkeypatch.setattr(core, "probe_ideas", lambda ideas, job=None: {k: {"verified": True, "reference": None, "evidence": [], "feasibility": 7,
+                                                                        "demand": 6} for k in range(len(ideas))})
+    monkeypatch.setattr(core, "llm_choice", lambda p, t: ("gemini", "m", None))
+    jid = db.execute("insert into jobs (user_id, kind, payload) values (%s,'ideas',%s) returning id",
+                     (user, Jsonb({"channel_id": str(ch), "count": 25}))).fetchone()["id"]
+    out = core.ideas({"id": str(jid), "user_id": str(user), "payload": {"channel_id": str(ch), "count": 25}})
+    assert out["count"] == 25 and len(asks) == 2 and "Subject 100" in asks[1]
+    rows = db.execute("select demand_score, feasibility_score from ideas where channel_id=%s", (ch,)).fetchall()
+    assert len(rows) == 25 and all(r["demand_score"] == 6 and r["feasibility_score"] == 7 for r in rows)

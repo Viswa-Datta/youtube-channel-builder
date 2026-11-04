@@ -77,7 +77,7 @@ def _gemini(model: str, system: str, user: str, schema: dict, name: str) -> tupl
     prompt = f"{user}\n\nReturn ONLY JSON that validates against this JSON Schema:\n{json.dumps(schema)}"
     body = {"systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": "application/json", "temperature": 0.6}}
+            "generationConfig": {"responseMimeType": "application/json", "temperature": 0.6, "maxOutputTokens": 16384}}
     last = ""
     for m in (_gemini_models() or [model]):
         for attempt in range(4):

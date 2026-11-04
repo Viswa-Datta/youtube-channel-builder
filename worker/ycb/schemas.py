@@ -69,6 +69,11 @@ class IdeaBatch(BaseModel):
     ideas: list[Idea] = Field(min_length=20, max_length=30)
 
 
+class IdeaPart(BaseModel):
+    """One half of an idea batch (smaller answers are faster and more reliable)."""
+    ideas: list[Idea] = Field(min_length=8, max_length=16)
+
+
 def rank_score(i: Idea) -> float:
     return round(0.4 * i.demand_score + 0.25 * (10 - i.competition_score) + 0.35 * i.footage_feasibility_score, 2)
 

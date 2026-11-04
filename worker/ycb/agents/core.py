@@ -109,8 +109,23 @@ def ideas(job: dict) -> dict:
             f"Subjects for this niche: {pre['subjects']}.\nGuidance: {pre['ideas']}\nSafety: {pre['safety']}\n"
             f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
             f"Already have (do not repeat): {json.dumps(existing[:80])}")
-    batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
-                             user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
+    if fx:
+        batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
+                                 user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
+    else:  # two halves of ~13: each answer is small enough to come back quickly
+        from ..schemas import IdeaPart
+        want = int(p.get("count", 25))
+        got: list = []
+        for part in range(2):
+            n = want // 2 + (want % 2 if part == 0 else 0)
+            ask = user.replace(f"Count: {want}", f"Count: {n} (return exactly {n} ideas)")
+            if got:
+                ask += "\nAlso already proposed in this batch (different subjects only): " + json.dumps([i.case_name or i.title for i in got])
+            half, _ = complete_json(out=IdeaPart, agent="ideas", provider=prov, model=model, system=prompts.IDEAS.replace("Return 20-30 ideas.", f"Return {n} ideas."),
+                                    user=ask, user_id=job["user_id"], idem=f"job:{job['id']}:ideas:{part}")
+            got += half.ideas
+            hb_note(job, f"ideas written: {len(got)}/{want}")
+        batch = IdeaBatch.model_construct(ideas=got)
     est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
     n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
     # One idea per case: drop repeats of the same case (keep the first) and cases already on the board.
@@ -124,7 +139,7 @@ def ideas(job: dict) -> dict:
         seen.add(k)
         uniq.append(i)
     batch.ideas = uniq
-    probes = probe_ideas(batch.ideas) if not fx else {}
+    probes = probe_ideas(batch.ideas, job) if not fx else {}
     rows = []
     for k, i in enumerate(batch.ideas):
         pr = probes.get(k)
@@ -158,7 +173,15 @@ def ideas(job: dict) -> dict:
             "confirmed": sum(1 for _, pr in ranked if pr and pr["verified"])}
 
 
-def probe_ideas(ideas: list) -> dict[int, dict]:
+def hb_note(job: dict, note: str) -> None:
+    """Show progress on the job (the idea board's progress box reads it)."""
+    try:
+        db.x("update jobs set progress_note=%s where id=%s", (note, job["id"]))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def probe_ideas(ideas: list, job: dict | None = None) -> dict[int, dict]:
     """Live-check every case-based idea (exists? official footage found?). Network trouble never fails the job."""
     from concurrent.futures import ThreadPoolExecutor
     from ..footage.discovery import probe_case
@@ -176,8 +199,13 @@ def probe_ideas(ideas: list) -> dict[int, dict]:
         except Exception as e:  # noqa: BLE001
             return k, {"verified": False, "reference": None, "evidence": [], "feasibility": i.footage_feasibility_score,
                        "error": str(e)[:200]}
+    done: dict[int, dict] = {}
     with ThreadPoolExecutor(4) as ex:
-        return dict(ex.map(one, todo))
+        for k, r in ex.map(one, todo):
+            done[k] = r
+            if job:
+                hb_note(job, f"checking subjects on Wikipedia and free archives: {len(done)}/{len(todo)}")
+    return done
 
 
 # ------------------------------------------------------------------ Research Agent
