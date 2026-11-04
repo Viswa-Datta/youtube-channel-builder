@@ -276,10 +276,11 @@ def stage_footage(c: Ctx) -> str | None:
 
 def _yt_instructions(e: dict) -> str:
     return (f"Official video from {e.get('channel') or 'the agency'}"
-            f"{' (' + e['published'] + ')' if e.get('published') else ''}. The app is not allowed to download from YouTube. "
-            "Open the link, save the video with YouTube's own tools or from the agency's own website (agencies often post "
-            "the same file on their transparency page), then upload it here. Before you upload, check the agency's "
-            "release terms. If you only need part of it, write the start and end times in the upload form.")
+            f"{' (' + e['published'] + ')' if e.get('published') else ''}. YouTube does not offer a file download and the app "
+            "may not download from YouTube. To get the file: (1) look for a download link on the agency's own website or "
+            "transparency portal, or (2) ask the agency's records office for a copy of the released video (a public-records "
+            "request; usually free or low cost, can take days or weeks). When you have the file, upload it here and add "
+            "start/end times if you only need part. Otherwise press Skip: you can add it later and re-render that scene.")
 
 
 def _d(s):
