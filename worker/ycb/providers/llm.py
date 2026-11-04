@@ -81,8 +81,13 @@ def _gemini(model: str, system: str, user: str, schema: dict, name: str) -> tupl
     last = ""
     for m in (_gemini_models() or [model]):
         for attempt in range(4):
-            r = requests.post(f"{GEMINI_BASE}/models/{m}:generateContent", timeout=300, json=body,
-                              headers={"x-goog-api-key": settings.gemini_api_key})
+            try:
+                r = requests.post(f"{GEMINI_BASE}/models/{m}:generateContent", timeout=(20, 240), json=body,
+                                  headers={"x-goog-api-key": settings.gemini_api_key})
+            except (requests.Timeout, requests.ConnectionError) as e:  # slow or dropped: retry, then next model
+                last = f"{m}: {type(e).__name__}"
+                _t.sleep(min(60, 5 * 2 ** attempt))
+                continue
             if r.status_code in (429, 500, 503):
                 last = f"{m}: HTTP {r.status_code} (Google busy)"
                 _t.sleep(min(60, 5 * 2 ** attempt))

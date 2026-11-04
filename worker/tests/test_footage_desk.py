@@ -197,3 +197,14 @@ def test_licence_filter_and_presets():
     assert preset_for("Geopolitics")["key"] == "geopolitics"
     assert preset_for("True Crime Documentary")["key"] == "true_crime"
     assert preset_for("Cooking")["key"] == "generic"
+
+
+def test_tier_without_key_falls_back_to_configured_provider(monkeypatch):
+    from ycb.agents import core
+    from ycb.config import settings
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", "x")
+    prov, model, _ = core.llm_choice({}, "standard")
+    assert prov == "gemini" and model
+    prov, model, _ = core.llm_choice({"llm_provider": "openai", "llm_model": "gpt-4o-mini"}, "standard")
+    assert prov == "gemini"

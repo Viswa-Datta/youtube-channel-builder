@@ -29,7 +29,23 @@ def llm_choice(payload: dict, tier: str = "standard") -> tuple[str, str, str | N
         prov, model = payload["llm_provider"], payload.get("llm_model") or ""
     else:
         prov, model = pricing.P["tiers"][tier]["llm"].split(":", 1)
+    # A tier whose provider has no key falls back to the free provider that is configured, instead of failing.
+    from ..config import settings as _s
+    if prov != "fixture" and _s.missing_for(prov):
+        for alt in ("gemini", "openai", "anthropic"):
+            alt_model = _s_model(alt)
+            if alt != prov and alt_model and not _s.missing_for(alt):
+                prov, model = alt, alt_model
+                break
     return prov, model, (model if prov == "fixture" else None)
+
+
+def _s_model(provider: str) -> str:
+    """The configured default model for a provider (from the free tier entry in pricing.json)."""
+    for t in pricing.P["tiers"].values():
+        if t["llm"].startswith(provider + ":"):
+            return t["llm"].split(":", 1)[1]
+    return ""
 
 
 def _fx(fixture_set: str | None, name: str) -> str | None:
