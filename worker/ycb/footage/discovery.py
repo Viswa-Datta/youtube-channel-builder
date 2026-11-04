@@ -332,8 +332,8 @@ def smithsonian(query: str, n: int = 8) -> list[Evidence]:
     """Smithsonian Open Access: only items marked CC0 (public domain dedication). Needs an api.data.gov key."""
     if not settings.data_gov_api_key:
         return []
-    r = _get("https://api.si.edu/openaccess/api/v1.0/search",
-             params={"q": f"{query} AND online_media_type:Images", "rows": n, "api_key": settings.data_gov_api_key})
+    r = _get("https://api.si.edu/openaccess/api/v1.0/search", headers={"X-Api-Key": settings.data_gov_api_key},
+             params={"q": f"{query} AND online_media_type:Images", "rows": n})  # key in a header, never in URLs/logs
     out = []
     for row in ((r.json().get("response") or {}).get("rows", []) if r else []):
         c = row.get("content", {})
