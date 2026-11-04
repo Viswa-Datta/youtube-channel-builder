@@ -130,3 +130,17 @@ def test_visual_plan_chunks_and_fills_skipped_scenes(monkeypatch):
     assert calls[0] == [0, 1, 2, 3] and [2] in calls  # grouped, then re-asked only for the skipped scene
     fb = [n for n in plan.needs if n.scene_idx == 5]
     assert len(fb) == 1 and fb[0].tier == "news_document" and "Test case" in fb[0].search_query
+
+
+def test_short_narration_is_topped_up(monkeypatch):
+    from ycb.agents import core
+    from ycb.schemas import SceneNarration
+    seen = []
+
+    def fake(out, user, idem, **kw):
+        seen.append(idem)
+        n = 300 if not idem.endswith(("more0", "more1", "more2")) else 150
+        return SceneNarration(idx=1, narration=" ".join(["word"] * n)), None
+    monkeypatch.setattr(core, "complete_json", fake)
+    text = core.expand_scene({"id": "p", "title": "T"}, {"idx": 1, "title": "S", "draft": "d"}, 533, [], "gemini", "m", None, "u", "r")
+    assert len(text.split()) >= 0.9 * 533 and len(seen) == 3  # first draft + two continuations

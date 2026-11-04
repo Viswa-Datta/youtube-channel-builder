@@ -432,10 +432,28 @@ def expand_scene(project: dict, scene: dict, target_words: int, claims: list[dic
                            fixture=_fx(fx, f"narration/scene-{scene['idx']}"), stage="script")
     if out.idx != scene["idx"]:
         raise BusinessRuleViolation("expanded narration is for the wrong scene")
-    w = out.words()
-    if not (0.8 * target_words <= w <= 1.25 * target_words):
+    text = out.narration
+    w = len(text.split())
+    # Models often write short. Ask for a continuation (new facts from the claims, no repetition) until long enough.
+    for k in range(3):
+        if w >= 0.9 * target_words or fx:
+            break
+        more = target_words - w
+        cont_user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\n\nNARRATION SO FAR ({w} words):\n{text}\n\n"
+                     f"Write the NEXT part of this scene's narration: about {more} words that continue naturally from the last "
+                     f"sentence. Add detail and context from the research claims that the narration so far has not used; never "
+                     f"repeat a point already made and do not start the story again. Target words: {more}.\n"
+                     f"Research claims:\n{claim_txt}\nReturn idx={scene['idx']}.")
+        add, _ = complete_json(out=SceneNarration, agent="script", provider=prov, model=model, system=prompts.SCRIPT_EXPAND,
+                               user=cont_user, user_id=user_id, project_id=project["id"], render_id=render_id,
+                               idem=f"project:{project['id']}:expand:{scene['idx']}:{_h(scene['draft'])}:more{k}", stage="script")
+        text = text.rstrip() + "\n\n" + add.narration.strip()
+        w = len(text.split())
+    if not (0.8 * target_words <= w <= 1.5 * target_words) and not fx:
         raise BusinessRuleViolation(f"scene {scene['idx']} narration has {w} words, target {target_words}")
-    return out.narration
+    if fx and not (0.8 * target_words <= w <= 1.25 * target_words):
+        raise BusinessRuleViolation(f"scene {scene['idx']} narration has {w} words, target {target_words}")
+    return text
 
 
 def _h(s: str) -> str:
