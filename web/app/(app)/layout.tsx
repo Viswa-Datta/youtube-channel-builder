@@ -1,3 +1,4 @@
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { LayoutDashboard, Lightbulb, Clapperboard, Wallet, Settings, Upload } from "lucide-react";
 import { requireUser } from "@/lib/supabase/server";
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
         <div className="mt-6 truncate px-5 text-xs text-muted-foreground">{user.email}</div>
+        <div className="mt-3 px-5"><ThemeToggle /></div>
       </aside>
       <main className="min-w-0 flex-1 p-3 pb-20 sm:p-6 md:pb-6">{children}</main>
       {/* phone navigation */}

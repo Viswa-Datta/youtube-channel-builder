@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
+import { THEME_SCRIPT } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
   title: { default: "YouTube Channel Builder", template: "%s · YouTube Channel Builder" },
@@ -13,8 +14,11 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen font-sans">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body className="min-h-screen bg-background font-sans text-foreground">
         {children}
         <Analytics />
       </body>

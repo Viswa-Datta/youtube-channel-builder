@@ -4,6 +4,7 @@ import { YT_SCOPES, missingYoutubeEnv } from "@/lib/youtube";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CapForm, DeleteData, YoutubeConnection } from "@/components/settings-forms";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata = { title: "Settings" };
 
@@ -23,7 +24,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const missing = missingYoutubeEnv();
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="font-serif text-2xl">Settings</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="font-serif text-2xl">Settings</h1>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">Appearance <ThemeToggle /></div>
+      </div>
       {youtube && NOTES[youtube] && <p className="rounded-md border bg-card p-3 text-sm">{NOTES[youtube]}</p>}
 
       <Card><CardHeader><CardTitle>Spending</CardTitle><CardDescription>Generation pauses before any step that would cross the cap. Raising it resumes paused jobs.</CardDescription></CardHeader>

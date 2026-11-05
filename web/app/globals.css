@@ -38,6 +38,14 @@
     --muted-foreground: 220 10% 64%;
     --border: 222 14% 22%;
     --input: 222 14% 22%;
+    --accent: 38 52% 60%;
+    --accent-foreground: 222 30% 10%;
+    --destructive: 0 72% 66%;
+    --destructive-foreground: 222 30% 10%;
+    --ring: 38 52% 60%;
+    --success: 145 50% 58%;
+    --warning: 38 90% 62%;
+    color-scheme: dark;
   }
   * { @apply border-border; }
   html, body { @apply bg-background text-foreground antialiased; overflow-x: hidden; }
