@@ -58,11 +58,48 @@ class Idea(BaseModel):
     # Case-based niches (true crime etc.): the real case this idea is about. Optional for other niches.
     case_name: str | None = Field(default=None, max_length=160, description="Common name of the real case, as reported")
     location: str | None = Field(default=None, max_length=120, description="City, State/Country")
-    year: int | None = Field(default=None, ge=1900, le=2100)
+    year: int | None = Field(default=None, description="Year of the subject; negative for BC (e.g. -2560 for the Great Pyramid)")
     agency: str | None = Field(default=None, max_length=160, description="Investigating agency, e.g. 'Phoenix Police Department'")
     case_status: str | None = Field(default=None, max_length=60, description="e.g. convicted, acquitted, resolved, unsolved")
     public_footage: list[str] = Field(default_factory=list, max_length=6, description="Kinds of footage believed public, e.g. 'bodycam released by agency'")
     search_terms: list[str] = Field(default_factory=list, max_length=4, description="Queries to find the official footage")
+
+    @field_validator("year", mode="before")
+    @classmethod
+    def year_sane(cls, v):
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            return None
+        return v if -5000 <= v <= 2100 else None
+
+    @field_validator("public_footage", "search_terms", mode="before")
+    @classmethod
+    def trim_lists(cls, v):
+        return list(v or [])[:4] if isinstance(v, list) else []
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def trim_title(cls, v):
+        return str(v)[:100] if v is not None else v
+
+    @field_validator("hook", "angle", mode="before")
+    @classmethod
+    def trim_long(cls, v):
+        return str(v)[:400] if v is not None else v
+
+    @field_validator("demand_score", "competition_score", "footage_feasibility_score", mode="before")
+    @classmethod
+    def clamp_score(cls, v):
+        try:
+            return max(0, min(10, int(round(float(v)))))
+        except (TypeError, ValueError):
+            return 5
+
+    @field_validator("case_name", "location", "agency", "case_status", mode="before")
+    @classmethod
+    def trim_text(cls, v):
+        return (str(v)[:150] if v not in (None, "") else None)
 
 
 class IdeaBatch(BaseModel):
