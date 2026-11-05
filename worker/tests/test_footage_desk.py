@@ -227,7 +227,7 @@ def test_ideas_in_two_halves(db, user, monkeypatch):
     monkeypatch.setattr(core, "probe_ideas", lambda ideas, job=None: {k: {"verified": True, "reference": None, "evidence": [], "feasibility": 7,
                                                                         "demand": 6} for k in range(len(ideas))})
     monkeypatch.setattr(core, "llm_choice", lambda p, t: ("gemini", "m", None))
-    jid = db.execute("insert into jobs (user_id, kind, payload) values (%s,'ideas',%s) returning id",
+    jid = db.execute("insert into jobs (user_id, kind, payload, status) values (%s,'ideas',%s,'running') returning id",
                      (user, Jsonb({"channel_id": str(ch), "count": 25}))).fetchone()["id"]
     out = core.ideas({"id": str(jid), "user_id": str(user), "payload": {"channel_id": str(ch), "count": 25}})
     assert out["count"] == 25 and len(asks) == 2 and "Subject 100" in asks[1]
