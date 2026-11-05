@@ -290,9 +290,18 @@ def stage_footage_auto(c: Ctx) -> None:
     case = _case(c)
     subject = case.get("case_name") or c.project["title"]
     subj_words = discovery._words(subject)
-    used = {r["source_url"] for r in db.q("select source_url from assets where project_id=%s and selected and source_url is not null", (c.pid,))}
+    # Every item is used at most once per video; anything already found (selected or not) is never inserted again.
+    used = {r["source_url"] for r in db.q("select source_url from assets where project_id=%s and source_url is not null", (c.pid,))}
     for k, s in enumerate(scenes):
         needs = [n for n in plan if n["scene_idx"] == s["idx"]]
+        # items whose download failed earlier (e.g. disk full, timeout) are retried instead of searched again
+        retry = db.q("""select id, meta from assets where scene_id=%s and not selected and (meta->>'auto_rights')::boolean
+                        and meta ? 'download_error' and coalesce(meta->>'dismissed','') = ''
+                        and coalesce((meta->>'retries')::int, 0) < 2 order by created_at""", (s["id"],))
+        for a in retry[:AUTO_MAX_VIDEOS + AUTO_MAX_IMAGES]:
+            meta = {k2: v for k2, v in a["meta"].items() if k2 != "download_error"}
+            meta["retries"] = int(a["meta"].get("retries") or 0) + 1
+            db.x("update assets set selected=true, meta=%s where id=%s", (db.jsonb(meta), a["id"]))
         have = db.q1("""select count(*) filter (where kind='clip' and tier<>'stock_broll') v, count(*) filter (where kind='image') i,
                         count(*) filter (where tier='stock_broll') st from assets where scene_id=%s and selected""", (s["id"],))
         nv, ni, nst = have["v"], have["i"], have["st"]
@@ -586,6 +595,7 @@ def stage_assemble(c: Ctx) -> None:
             seg_dir.mkdir(parents=True, exist_ok=True)
             compose.scene_video(segs, seg_dir, out)
             store().put(out, key, "video/mp4")
+            shutil.rmtree(seg_dir, ignore_errors=True)  # per-segment scratch files are no longer needed
             db.x("update scenes set visual_path=%s, visual_hash=%s, footage_type=%s where id=%s",
                  (key, h, _footage_type(s), s["id"]))
             parts.append(out)
@@ -721,8 +731,9 @@ def stage_package(c: Ctx) -> None:
         "DISCLOSURE:", seo.disclosure_line, "",
         "YOUTUBE ALTERED/SYNTHETIC CONTENT SETTING: answer per YouTube's current disclosure rules (AI narration).",
         "", credits(c)]), encoding="utf-8")
-    thumb = cards.thumbnail(c.work / f"thumb-v-{c.render['version']}.jpg", seo.thumbnail_text, "The Investigation, Explained"
-                            if "cold case" in (c.project["title"] or "").lower() else (c.project["selected_title"] or "")[:40])
+    kit = db.q1("select selected from channel_kits where channel_id=%s order by version desc limit 1", (c.project["channel_id"],))
+    sub = ((kit or {}).get("selected") or {}).get("name") or ""
+    thumb = cards.thumbnail(c.work / f"thumb-v-{c.render['version']}.jpg", seo.thumbnail_text, sub[:40])
     v = c.render["version"]
     keys = {
         "script_path": store().put(sp, project_key(c.pid, "renders", f"script-v-{v}.txt"), "text/plain"),
@@ -744,13 +755,42 @@ def stage_package(c: Ctx) -> None:
             finished_at=now() where id=%s""", (keys["script_path"], keys["pack_path"], keys["thumb_path"], c.rid))
     db.x("update projects set status='review' where id=%s", (c.pid,))
     db.x("update ideas set status='ready' where id=%s", (c.project["idea_id"],))
+    shutil.rmtree(c.work, ignore_errors=True)  # everything is in storage now; free the work disk
 
 
 HANDLERS = {"script": stage_script, "voice": stage_voice, "footage": stage_footage, "blur": stage_blur,
             "assemble": stage_assemble, "package": stage_package}
 
 
+def free_work_disk(keep_project: str, min_free_gb: float = 3.0) -> list[str]:
+    """If the work disk is low, delete leftover work folders of projects that have no render in progress.
+    Work folders are only caches: every scene, clip, audio file and render is already in storage."""
+    import os
+    root = settings.work_dir
+    if not root.exists():
+        return []
+    st = os.statvfs(root)
+    if st.f_bavail * st.f_frsize / 1e9 >= min_free_gb:
+        return []
+    active = {str(r["project_id"]) for r in db.q("select distinct project_id from renders where status in ('queued','running','waiting_user')")}
+    removed = []
+    for d in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime):
+        if d.is_dir() and d.name != keep_project and d.name not in active:
+            shutil.rmtree(d, ignore_errors=True)
+            removed.append(d.name)
+    if os.statvfs(root).f_bavail * os.statvfs(root).f_frsize / 1e9 < min_free_gb:
+        # still low: clear re-downloadable caches of the current project too (never its finished outputs in storage)
+        for sub in ("cache", "segs", "dl", "blurred"):
+            shutil.rmtree(root / keep_project / sub, ignore_errors=True)
+    return removed
+
+
 def run_stage(job: dict, hb: queue.Heartbeat) -> None:
+    try:
+        rp = db.q1("select project_id from renders where id=%s", (job["render_id"],))
+        free_work_disk(str(rp["project_id"]) if rp else "")
+    except Exception:  # noqa: BLE001 - cleanup must never block a render
+        pass
     c = Ctx(job, hb)
     stage = job["stage"]
     db.x("update renders set status='running', stage=%s where id=%s", (stage, c.rid))

@@ -233,3 +233,33 @@ def test_ideas_in_two_halves(db, user, monkeypatch):
     assert out["count"] == 25 and len(asks) == 2 and "Subject 100" in asks[1]
     rows = db.execute("select demand_score, feasibility_score from ideas where channel_id=%s", (ch,)).fetchall()
     assert len(rows) == 25 and all(r["demand_score"] == 6 and r["feasibility_score"] == 7 for r in rows)
+
+
+def test_free_work_disk_removes_only_idle_projects(db, project, monkeypatch, tmp_path):
+    import os
+    from collections import namedtuple
+    from ycb.stages import pipeline
+    from ycb.config import settings
+    monkeypatch.setattr(settings, "work_dir", tmp_path)
+    busy = str(project["project"])
+    db.execute("insert into renders (project_id, version, status) values (%s,1,'running')", (busy,))
+    for name in ("idle-old", busy, "current"):
+        (tmp_path / name / "cache").mkdir(parents=True)
+        (tmp_path / name / "cache" / "f.bin").write_bytes(b"x")
+    S = namedtuple("S", "f_bavail f_frsize")
+    monkeypatch.setattr(os, "statvfs", lambda p: S(1, 1))  # pretend the disk is full
+    removed = pipeline.free_work_disk("current")
+    assert removed == ["idle-old"] and (tmp_path / busy).exists() and not (tmp_path / "current" / "cache").exists()
+
+
+def test_relevance_short_names_match_in_full():
+    from ycb.footage import discovery
+    from ycb.footage.discovery import Evidence
+    words = discovery._words("Empire State Building")
+    good = Evidence("downloadable", "NASA", "Empire State Building lit blue", "u1", license="Public Domain", media_type="image")
+    bad = Evidence("downloadable", "NASA", "Members of State Duma of Russian Empire", "u2", license="Public Domain", media_type="image")
+    import unittest.mock as m
+    with m.patch.object(discovery, "wikimedia_commons", lambda *a, **k: []), m.patch.object(discovery, "internet_archive", lambda *a, **k: []), \
+         m.patch.object(discovery, "smithsonian", lambda *a, **k: []), m.patch.object(discovery, "nasa", lambda q, n, media: [good, bad] if media == "image" else []):
+        got = discovery.free_media("Empire State Building", 6, words)
+    assert [e.title for e in got] == ["Empire State Building lit blue"]

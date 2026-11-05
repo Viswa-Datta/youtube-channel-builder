@@ -426,10 +426,13 @@ def probe_subject(subject: str, search_terms: list[str]) -> dict:
 def free_media(query: str, n: int = 6, words: set[str] | None = None) -> list[Evidence]:
     """Everything the agent may download and use automatically for a query, from every free source, license-filtered."""
     def relevant(e: Evidence) -> bool:
+        """Short names (<= 4 distinctive words) must match in full: 'Empire State Building' must not match
+        'State Duma of the Russian Empire'. Longer names need 60% of their words."""
         if not words:
             return True
         text = e.title + " " + " ".join(e.meta.get("keywords") or []) + " " + (e.meta.get("description") or "")
-        return len(words & _words(text)) >= min(2, len(words))
+        need = len(words) if len(words) <= 4 else max(3, round(0.6 * len(words)))
+        return len(words & _words(text)) >= need
     out: list[Evidence] = []
     with ThreadPoolExecutor(5) as ex:
         futs = [ex.submit(wikimedia_commons, query, n, "video"), ex.submit(wikimedia_commons, query, n, "image"),
