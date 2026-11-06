@@ -406,23 +406,37 @@ def _download(c: Ctx, asset: dict) -> None:
     ext = ".jpg" if image else ".mp4"
     key = project_key(c.pid, "images" if image else "clips", "raw", f"{asset['id']}{ext}")
     if not store().exists(key) and not image and meta.get("auto_rights"):
-        # Automatic picks only ever use the first 2 minutes: let FFmpeg read just that part straight from the source
-        # instead of downloading the whole (sometimes multi-GB) file first.
+        # Automatic picks only use the first minute: FFmpeg reads just that part straight from the source (NASA files
+        # can be several GB). Never fall back to downloading the whole file for these; a failure drops the clip.
+        import time as _t
         from ..media.ff import run as ff
         out = c.work / "dl" / f"{asset['id']}{ext}"
         out.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            ff(["-rw_timeout", "60000000", "-user_agent", UA.get("User-Agent", "ycb"), "-t", "120", "-i", url, "-t", "120",
-                "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", str(out)], timeout=600)
-            store().put(out, key, "video/mp4")
-        except Exception:  # noqa: BLE001 - some servers refuse partial reads; fall back to a full download
-            out.unlink(missing_ok=True)
+        last = None
+        for attempt in range(3):
+            try:
+                ff(["-rw_timeout", "60000000", "-user_agent", UA.get("User-Agent", "ycb"), "-t", "60", "-i", url, "-t", "60",
+                    "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21", "-threads", "2",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(out)], timeout=900)
+                store().put(out, key, "video/mp4")
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                out.unlink(missing_ok=True)
+                if "429" in str(e) or "Too Many" in str(e):
+                    _t.sleep(20 * (attempt + 1))  # Wikimedia asks bulk clients to slow down
+                    continue
+                break
+        if not store().exists(key):
+            raise agents.BusinessRuleViolation(f"could not read the first minute of the clip: {str(last)[-200:]}")
     if not store().exists(key):
         tmp = c.work / "dl" / f"{asset['id']}.src"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         with requests.get(url, stream=True, timeout=180, headers=UA) as r:
             r.raise_for_status()
+            size = int(r.headers.get("content-length") or 0)
+            if size > 800 * 1024 * 1024:
+                raise agents.BusinessRuleViolation(f"file is {size // 2**20} MB; too large to download")
             with open(tmp, "wb") as f:
                 for ch in r.iter_content(1 << 20):
                     f.write(ch)
@@ -439,9 +453,6 @@ def _download(c: Ctx, asset: dict) -> None:
                 "-c:a", "aac", "-b:a", "160k", str(out)])
         store().put(out, key, "image/jpeg" if image else "video/mp4")
     db.x("update assets set storage_path=%s where id=%s", (key, asset["id"]))
-
-
-FETCH_WORKERS = 4
 
 
 def _fetch_selected(c: Ctx, stage: str = "blur", share: float = 0.6) -> None:
@@ -465,17 +476,22 @@ def _fetch_selected(c: Ctx, stage: str = "blur", share: float = 0.6) -> None:
             return None
 
     done, err = 0, None
-    with ThreadPoolExecutor(FETCH_WORKERS) as pool:
-        futs = [pool.submit(one, a) for a in todo]
-        try:
-            for f in as_completed(futs):
-                done += 1
-                err = err or f.result()
-                c.progress(stage, share * done / len(todo), f"downloading footage {done}/{len(todo)}")
-        except BaseException:
-            for f in futs:
-                f.cancel()  # cancelled by the user: stop starting new downloads
-            raise
+    # Photos are quick: 6 at a time. Videos are transcoded on a small CPU: 2 at a time.
+    for kind, n in (("image", 6), ("clip", 2)):
+        batch = [a for a in todo if a["kind"] == kind]
+        if not batch:
+            continue
+        with ThreadPoolExecutor(n) as pool:
+            futs = [pool.submit(one, a) for a in batch]
+            try:
+                for f in as_completed(futs):
+                    done += 1
+                    err = err or f.result()
+                    c.progress(stage, share * done / len(todo), f"downloading {'photos' if kind == 'image' else 'video clips'} {done}/{len(todo)}")
+            except BaseException:
+                for f in futs:
+                    f.cancel()  # cancelled by the user: stop starting new downloads
+                raise
     if err:
         raise err
 
@@ -663,8 +679,10 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
     for a in clips:
         p = c.local(a["meta"]["blurred_key"])
         src = duration(p)
-        a_in, a_out = float(a["in_sec"] or 0), float(a["out_sec"] or src)
-        media.append({"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, min(src, a_out)), "pos": a_in,
+        a_in, a_out = float(a["in_sec"] or 0), min(src, float(a["out_sec"] or src))
+        if a_out - a_in < 3:  # in/out points beyond the part that was downloaded: use the whole downloaded piece
+            a_in, a_out = 0.0, src
+        media.append({"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, a_out), "pos": a_in,
                       "cap": 14.0 if a["tier"] == "real" else 10.0})
     for i, p in enumerate(photo_paths):
         media.append({"kind": "photo", "path": p, "n": i})
