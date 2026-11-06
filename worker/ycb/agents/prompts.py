@@ -86,5 +86,6 @@ options, each UNDER 60 characters, accurate and not sensational; a description t
 summary, then the chapter list exactly as provided (first line 0:00), then a sources section placeholder line
 "SOURCES_AND_CREDITS" (the app inserts verified credits), then the disclosure line; 8-20 tags under 480 characters
 in total; a thumbnail concept and image prompt that use NO graphic imagery, no real victim photos, no faces of
-private people; thumbnail_text <= 40 chars; and a disclosure_line stating that narration is AI-generated and that
+private people; thumbnail_text: 2-5 punchy words (<= 40 chars) that create curiosity and do NOT repeat the title,
+using a striking true number from the research when there is one (e.g. "410 DAYS TO THE SKY", "THE 1945 CRASH"); and a disclosure_line stating that narration is AI-generated and that
 any illustrative footage is labelled. Return JSON only."""

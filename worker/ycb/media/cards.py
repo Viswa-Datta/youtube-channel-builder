@@ -206,6 +206,193 @@ def thumbnail(out: Path, text: str, sub: str) -> Path:
     return _save(_vignette(img), out, quality=92)
 
 
+SANS_BLACK = "Inter-Black.otf"
+THUMB_ACCENTS = {  # highlight colour per niche preset: bright, high-contrast, readable at phone size
+    "true_crime": (255, 70, 60), "architecture": (255, 205, 40), "geopolitics": (255, 120, 40),
+    "motorsport": (255, 40, 60), "science_space": (60, 210, 255), "business_tech": (60, 230, 140), "generic": (255, 205, 40),
+}
+
+
+def _heavy(size: int) -> ImageFont.FreeTypeFont:
+    try:
+        return font(SANS_BLACK, size)
+    except Exception:  # noqa: BLE001
+        return font(SANS_B, size)
+
+
+def _cover(im: Image.Image, w: int, h: int, focus_x: float = 0.5, focus_y: float = 0.42) -> Image.Image:
+    """Scale to cover w x h and crop around a focus point (buildings and people sit slightly above centre)."""
+    im = im.convert("RGB")
+    k = max(w / im.width, h / im.height)
+    im = im.resize((max(w, round(im.width * k)), max(h, round(im.height * k))), Image.LANCZOS)
+    x = int((im.width - w) * focus_x)
+    y = int((im.height - h) * focus_y)
+    return im.crop((x, y, x + w, y + h))
+
+
+def _grade(im: Image.Image) -> Image.Image:
+    """Punchy, high-contrast grade that survives YouTube's small sizes."""
+    from PIL import ImageEnhance, ImageOps
+    im = ImageOps.autocontrast(im, cutoff=1)
+    im = ImageEnhance.Contrast(im).enhance(1.25)
+    im = ImageEnhance.Color(im).enhance(1.35)
+    return ImageEnhance.Sharpness(im).enhance(1.4)
+
+
+def _outlined(d: ImageDraw.ImageDraw, xy, text: str, f, fill, stroke: int):
+    d.text(xy, text, font=f, fill=fill, stroke_width=stroke, stroke_fill=(0, 0, 0))
+
+
+def thumbnail_photo(out: Path, text: str, badge: str, photo: Path | None, accent=(255, 205, 40)) -> Path:
+    """Click-worthy thumbnail: the real subject photo (licence-checked footage from the video) on the right,
+    graded and sharp; huge outlined headline on the left with the key word highlighted; channel badge.
+    Without a photo it falls back to a bold gradient. Never built from a video frame."""
+    W, H = 1280, 720
+    if photo and Path(photo).exists():
+        src = Image.open(photo)
+        bg = _cover(src, W, H).filter(ImageFilter.GaussianBlur(28))
+        bg = Image.blend(bg, Image.new("RGB", (W, H), (0, 0, 0)), 0.55)
+        subj = _grade(_cover(src, 700, H))
+        img = bg.copy()
+        mask = Image.linear_gradient("L").rotate(90).resize((700, H))  # transparent on the left edge, solid on the right
+        mask = mask.point(lambda v: min(255, int(v * 2.2)))
+        img.paste(subj, (W - 700, 0), mask)
+    else:
+        img = Image.new("RGB", (W, H), (10, 16, 30))
+        glow = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([W * 0.45, -H * 0.3, W * 1.3, H * 1.2], fill=255)
+        glow = glow.filter(ImageFilter.GaussianBlur(160))
+        img = Image.composite(Image.new("RGB", (W, H), tuple(int(c * 0.55) for c in accent)), img, glow)
+        gd = ImageDraw.Draw(img)
+        for gx in range(0, W, 40):
+            gd.line([(gx, 0), (gx, H)], fill=(255, 255, 255) if gx % 200 == 0 else (60, 70, 90), width=1)
+        for gy in range(0, H, 40):
+            gd.line([(0, gy), (W, gy)], fill=(255, 255, 255) if gy % 200 == 0 else (60, 70, 90), width=1)
+        img = Image.blend(img, Image.new("RGB", (W, H), (10, 16, 30)), 0.55)
+    # dark gradient behind the text for contrast
+    shade = Image.linear_gradient("L").rotate(90).resize((W, H)).point(lambda v: int((255 - v) * 0.85))
+    img = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), img, shade)
+    d = ImageDraw.Draw(img)
+
+    words = text.upper().split()
+    hi = next((i for i, w in enumerate(words) if any(ch.isdigit() for ch in w)), len(words) - 1)
+    # largest size where <= 3 lines fit in the left 60%
+    best = None
+    for size in range(168, 70, -6):
+        f = _heavy(size)
+        lines, cur = [], []
+        for i, w in enumerate(words):
+            trial = " ".join(x for _, x in cur + [(i, w)])
+            if cur and d.textlength(trial, font=f) > 720:
+                lines.append(cur)
+                cur = [(i, w)]
+            else:
+                cur.append((i, w))
+        if cur:
+            lines.append(cur)
+        if len(lines) <= 3 and all(d.textlength(" ".join(x for _, x in ln), font=f) <= 720 for ln in lines):
+            best = (size, f, lines)
+            break
+    size, f, lines = best or (72, _heavy(72), [[(i, w) for i, w in enumerate(words)]])
+    lh = int(size * 1.04)
+    y = (H - lh * len(lines)) // 2 + 20
+    stroke = max(6, size // 14)
+    for ln in lines:
+        x = 64
+        for i, w in ln:
+            col = accent if i == hi else (255, 255, 255)
+            # drop shadow, then outlined word
+            d.text((x + 8, y + 10), w, font=f, fill=(0, 0, 0))
+            _outlined(d, (x, y), w, f, col, stroke)
+            x += int(d.textlength(w + " ", font=f))
+        y += lh
+    if badge:
+        bf = _heavy(34)
+        tw = int(d.textlength(badge.upper(), font=bf))
+        d.rounded_rectangle([64, 52, 64 + tw + 40, 52 + 58], radius=10, fill=accent)
+        d.text((84, 60), badge.upper(), font=bf, fill=(10, 10, 10))
+    return _save(img, out, quality=92)
+
+
+def thumbnail_doc(out: Path, text: str, channel: str, photo: Path | None, kicker: str = "FULL DOCUMENTARY",
+                  accent=(255, 205, 40), style: str = "label") -> Path:
+    """Documentary-channel thumbnail (the look of big science/engineering channels): the real photo fills the
+    frame, graded for punch; a dark fade at the bottom carries a small coloured kicker and a huge headline;
+    the channel name sits bottom-left behind a divider. style="band" puts the kicker in an angled colour band.
+    Portrait photos are shown sharp over a blurred, full-frame copy of themselves."""
+    W, H = 1280, 720
+    if photo and Path(photo).exists():
+        src = Image.open(photo).convert("RGB")
+        # fill the frame; tall photos (towers, people) are cropped around the upper third, where the subject usually is
+        img = _grade(_cover(src, W, H, 0.5, 0.45 if src.width / src.height >= 1.15 else 0.3))
+    else:
+        img = Image.new("RGB", (W, H), (10, 16, 30))
+        glow = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([W * 0.3, -H * 0.4, W * 1.3, H * 1.0], fill=255)
+        img = Image.composite(Image.new("RGB", (W, H), tuple(int(c * 0.5) for c in accent)), img, glow.filter(ImageFilter.GaussianBlur(170)))
+    # bottom fade for the text
+    fade = Image.linear_gradient("L").resize((W, H)).point(lambda v: 0 if v < 110 else min(235, int((v - 110) * 1.9)))
+    img = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), img, fade)
+    d = ImageDraw.Draw(img)
+
+    words = text.upper().split()
+    hi = next((i for i, w in enumerate(words) if any(ch.isdigit() for ch in w)), None)
+    left = 64
+    if channel:  # channel name (stacked, logo-like) + divider, bottom-left
+        parts = channel.upper().split()
+        rows = [" ".join(parts[: (len(parts) + 1) // 2]), " ".join(parts[(len(parts) + 1) // 2:])] if len(parts) > 1 else [channel.upper()]
+        cf = font(SERIF_B, 40)
+        while max(d.textlength(r, font=cf) for r in rows) > 250 and cf.size > 22:
+            cf = font(SERIF_B, cf.size - 2)
+        cw = int(max(d.textlength(r, font=cf) for r in rows))
+        cy = H - 60 - int(cf.size * 1.15) * len(rows)
+        for r in rows:
+            d.text((left, cy), r, font=cf, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+            cy += int(cf.size * 1.15)
+        d.line([(left + cw + 28, H - 190), (left + cw + 28, H - 48)], fill=(255, 255, 255), width=4)
+        left = left + cw + 58
+    avail = W - left - 56
+    best = None
+    for size in range(110, 48, -4):
+        f = _heavy(size)
+        lines, cur = [], []
+        for i, w in enumerate(words):
+            trial = " ".join(x for _, x in cur + [(i, w)])
+            if cur and d.textlength(trial, font=f) > avail:
+                lines.append(cur)
+                cur = [(i, w)]
+            else:
+                cur.append((i, w))
+        if cur:
+            lines.append(cur)
+        if len(lines) <= 2 and all(d.textlength(" ".join(x for _, x in ln), font=f) <= avail for ln in lines):
+            best = (size, f, lines)
+            break
+    size, f, lines = best or (48, _heavy(48), [[(i, w) for i, w in enumerate(words)]])
+    lh = int(size * 1.02)
+    y = H - 46 - lh * len(lines)
+    kf = _heavy(max(30, size // 3))
+    ky = y - int(kf.size * 1.35)
+    if kicker:
+        if style == "band":
+            kw = int(d.textlength(kicker, font=kf))
+            band = [(left - 24, ky - 10), (left + kw + 40, ky - 10), (left + kw + 20, ky + kf.size + 14), (left - 44, ky + kf.size + 14)]
+            d.polygon(band, fill=accent)
+            d.text((left, ky), kicker, font=kf, fill=(10, 10, 10))
+        else:
+            d.text((left, ky), kicker, font=kf, fill=accent, stroke_width=2, stroke_fill=(0, 0, 0))
+    stroke = max(3, size // 22)
+    for ln in lines:
+        x = left
+        for i, w in ln:
+            col = accent if i == hi else (255, 255, 255)
+            d.text((x + 5, y + 6), w, font=f, fill=(0, 0, 0))
+            d.text((x, y), w, font=f, fill=col, stroke_width=stroke, stroke_fill=(0, 0, 0))
+            x += int(d.textlength(w + " ", font=f))
+        y += lh
+    return _save(img, out, quality=92)
+
+
 def _save(img: Image.Image, out: Path, quality: int = 90) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out, quality=quality) if out.suffix.lower() in (".jpg", ".jpeg") else img.save(out)

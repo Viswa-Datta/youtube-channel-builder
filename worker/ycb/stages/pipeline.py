@@ -701,6 +701,42 @@ def credits(c: Ctx) -> str:
     return "\n".join(out)
 
 
+def make_thumbnail(c: Ctx, text: str, badge: str) -> Path:
+    """Photo-led thumbnail from the video's own licence-checked footage: the best large photo of the subject.
+    True-crime videos never put a photo on the thumbnail (it could show a victim or a private person)."""
+    from ..agents.niches import preset_for
+    from ..footage.discovery import is_graphic
+    ch = db.q1("select niche, sub_niche from channels where id=%s", (c.project["channel_id"],)) or {}
+    pre = preset_for(ch.get("niche"), ch.get("sub_niche"))["key"]
+    accent = cards.THUMB_ACCENTS.get(pre, cards.THUMB_ACCENTS["generic"])
+    photo = None
+    if pre != "true_crime":
+        subject = (_case(c).get("case_name") or "").lower()
+        rows = db.q("""select storage_path, title from assets where project_id=%s and selected and kind='image'
+                       and tier='real' and storage_path is not null order by created_at""", (c.pid,))
+        best, best_score = None, -1.0
+        for r in rows:
+            if is_graphic(r["title"] or ""):
+                continue
+            try:
+                p = c.local(r["storage_path"])
+                from PIL import Image as _I
+                w, h = _I.open(p).size
+            except Exception:  # noqa: BLE001
+                continue
+            # big, wide photos of the subject itself win (thumbnails are 16:9)
+            score = min(w, h) / 100 + (6 if w / h >= 1.15 else 0) + \
+                (5 if subject and all(t in (r["title"] or "").lower() for t in subject.split()[:3]) else 0)
+            if score > best_score:
+                best, best_score = p, score
+        photo = best
+    kickers = {"true_crime": "THE FULL STORY", "architecture": "FULL DOCUMENTARY", "geopolitics": "EXPLAINED",
+               "motorsport": "THE FULL STORY", "science_space": "FULL DOCUMENTARY", "business_tech": "THE FULL STORY"}
+    style = "band" if c.render["version"] % 2 == 0 else "label"
+    return cards.thumbnail_doc(c.work / f"thumb-v-{c.render['version']}.jpg", text, badge, photo,
+                               kickers.get(pre, "FULL DOCUMENTARY"), accent, style)
+
+
 def stage_package(c: Ctx) -> None:
     scenes = c.scenes()
     narration = "\n\n".join(s["narration"] for s in scenes)
@@ -733,7 +769,7 @@ def stage_package(c: Ctx) -> None:
         "", credits(c)]), encoding="utf-8")
     kit = db.q1("select selected from channel_kits where channel_id=%s order by version desc limit 1", (c.project["channel_id"],))
     sub = ((kit or {}).get("selected") or {}).get("name") or ""
-    thumb = cards.thumbnail(c.work / f"thumb-v-{c.render['version']}.jpg", seo.thumbnail_text, sub[:40])
+    thumb = make_thumbnail(c, seo.thumbnail_text, sub[:40])
     v = c.render["version"]
     keys = {
         "script_path": store().put(sp, project_key(c.pid, "renders", f"script-v-{v}.txt"), "text/plain"),

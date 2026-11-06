@@ -263,3 +263,15 @@ def test_relevance_short_names_match_in_full():
          m.patch.object(discovery, "smithsonian", lambda *a, **k: []), m.patch.object(discovery, "nasa", lambda q, n, media: [good, bad] if media == "image" else []):
         got = discovery.free_media("Empire State Building", 6, words)
     assert [e.title for e in got] == ["Empire State Building lit blue"]
+
+
+def test_documentary_thumbnail_sizes(tmp_path):
+    from PIL import Image
+    from ycb.media import cards
+    tall = tmp_path / "tall.jpg"
+    Image.new("RGB", (800, 1200), (90, 120, 160)).save(tall)
+    wide = tmp_path / "wide.jpg"
+    Image.new("RGB", (1920, 1080), (160, 120, 90)).save(wide)
+    for i, (ph, style) in enumerate([(tall, "label"), (wide, "band"), (None, "label")]):
+        out = cards.thumbnail_doc(tmp_path / f"t{i}.jpg", "Built in 410 Days", "Blueprint Odyssey", ph, style=style)
+        assert Image.open(out).size == (1280, 720) and out.stat().st_size < 2_000_000  # YouTube limit is 2 MB
