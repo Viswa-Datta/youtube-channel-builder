@@ -191,6 +191,63 @@ class SceneNarration(BaseModel):
         return len(self.narration.split())
 
 
+# ------------------------------------------------------------------ Motion Graphics Agent
+GRAPHIC_KINDS = ("route", "place", "counter", "bars", "timeline", "points", "quote")
+
+
+class Graphic(BaseModel):
+    """One explainer animation shown while the narration talks about it. Checked by the app before use."""
+    kind: str = Field(description="route | place | counter | bars | timeline | points | quote")
+    anchor: str = Field(default="", description="5-12 words copied exactly from the narration where it should appear")
+    title: str = Field(default="", description="bars/timeline/points heading, counter label, quote label")
+    place: str = Field(default="", description="place: a geocodable name, e.g. 'Empire State Building, New York'")
+    place_label: str = Field(default="", description="short on-screen name for the place")
+    from_place: str = ""
+    to_place: str = ""
+    value: float | None = None
+    unit: str = ""
+    labels: list[str] = Field(default_factory=list)
+    values: list[float] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list, description="points: 2-5 short phrases; timeline: 'YEAR: event'")
+    text: str = Field(default="", description="quote: one sentence copied from the narration")
+
+    @field_validator("title", "place", "place_label", "from_place", "to_place", "unit", "text", "anchor", mode="before")
+    @classmethod
+    def _str(cls, v):
+        return "" if v is None else str(v)[:300]
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _vals(cls, v):
+        out = []
+        for x in v or []:
+            try:
+                out.append(float(str(x).replace(",", "")))
+            except ValueError:
+                continue
+        return out
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _val(cls, v):
+        if v in (None, ""):
+            return None
+        try:
+            return float(str(v).replace(",", ""))
+        except ValueError:
+            return None
+
+
+class SceneGraphics(BaseModel):
+    idx: int
+    graphics: list[Graphic] = Field(default_factory=list)
+
+    @field_validator("graphics", mode="before")
+    @classmethod
+    def _cap(cls, v):
+        return (v or [])[:12]
+
+
 # ------------------------------------------------------------------ Visual Director Agent
 class FootageNeed(BaseModel):
     scene_idx: int

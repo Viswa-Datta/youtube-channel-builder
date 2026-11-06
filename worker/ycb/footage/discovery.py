@@ -444,9 +444,14 @@ def free_media(query: str, n: int = 6, words: set[str] | None = None) -> list[Ev
             except Exception:  # noqa: BLE001 - one source failing never stops the search
                 pass
     keep = []
+    seen_titles: dict[str, int] = {}
     for e in out:
         if is_graphic(e.title) or not relevant(e):
             continue
+        tkey = re.sub(r"\W+", " ", e.title.lower()).strip()
+        if seen_titles.get(tkey, 0) >= 2:
+            continue  # a press set with 20 near-identical shots would crowd out everything else
+        seen_titles[tkey] = seen_titles.get(tkey, 0) + 1
         if e.source == "Wikimedia Commons":
             if not license_ok(e.meta.get("license_short"), e.meta.get("license_url")):
                 continue

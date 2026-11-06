@@ -537,3 +537,93 @@ def expand_scene(project: dict, scene: dict, target_words: int, claims: list[dic
 def _h(s: str) -> str:
     import hashlib
     return hashlib.sha256(s.encode()).hexdigest()[:12]
+
+
+# ------------------------------------------------------------------ Motion Graphics Agent
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", "", re.sub(r"\s+", " ", (s or "").lower())).strip()
+
+
+def verify_graphics(graphics: list, narration: str, claims: list[str], geocode=None) -> list[dict]:
+    """Keep only animations the app can stand behind: numbers that literally appear in the narration or research,
+    dates that appear in the text, quotes copied from the narration, places that geocode. Distances are computed."""
+    from ..media import maps
+    geocode = geocode or maps.geocode
+    pool = _nums(narration).union(*(_nums(c) for c in claims)) if claims else _nums(narration)
+    text = _norm(narration + " " + " ".join(claims))
+    nar = _norm(narration)
+    out, used = [], {"points": 0, "quote": 0}
+    for g in graphics:
+        g = g.model_dump() if hasattr(g, "model_dump") else dict(g)
+        k = (g.get("kind") or "").strip().lower()
+        try:
+            if k == "counter":
+                if g.get("value") is None or round(float(g["value"]), 4) not in pool or not g.get("title"):
+                    continue
+            elif k == "bars":
+                lv = list(zip(g.get("labels") or [], g.get("values") or []))
+                if not 2 <= len(lv) <= 6 or any(round(float(v), 4) not in pool for _, v in lv):
+                    continue
+                g["labels"], g["values"] = [str(a)[:26] for a, _ in lv], [float(v) for _, v in lv]
+            elif k == "timeline":
+                items = []
+                for it in g.get("items") or []:
+                    date, _, ev = str(it).partition(":")
+                    yrs = re.findall(r"\d{3,4}", date)
+                    if ev.strip() and yrs and all(y in text for y in yrs):
+                        items.append(f"{date.strip()[:14]}: {ev.strip()[:70]}")
+                if len(items) < 3:
+                    continue
+                g["items"] = items[:6]
+            elif k == "points":
+                items = [" ".join(str(x).split()[:9]) for x in (g.get("items") or []) if str(x).strip()][:5]
+                if len(items) < 2 or used["points"] >= 1:
+                    continue
+                if any(n not in pool for it in items for n in _nums(it)):
+                    continue
+                g["items"] = items
+                used["points"] += 1
+            elif k == "quote":
+                q = (g.get("text") or "").strip()
+                if not (8 <= len(q.split()) <= 34) or _norm(q) not in nar or used["quote"] >= 1:
+                    continue
+                used["quote"] += 1
+            elif k == "place":
+                hit = geocode(g.get("place") or "")
+                if not hit:
+                    continue
+                g["lat"], g["lon"] = hit[0], hit[1]
+                g["place_label"] = (g.get("place_label") or g["place"].split(",")[0])[:34]
+            elif k == "route":
+                a, b = geocode(g.get("from_place") or ""), geocode(g.get("to_place") or "")
+                if not a or not b or (abs(a[0] - b[0]) < 1e-3 and abs(a[1] - b[1]) < 1e-3):
+                    continue
+                g["a"] = [a[0], a[1], (g["from_place"].split(",")[0])[:26]]
+                g["b"] = [b[0], b[1], (g["to_place"].split(",")[0])[:26]]
+            else:
+                continue
+        except (TypeError, ValueError):
+            continue
+        g["kind"] = k
+        out.append(g)
+    return out
+
+
+def plan_graphics(project: dict, scene: dict, claims: list[str], prov: str, model: str, fx: str | None,
+                  user_id: str, render_id: str | None) -> list[dict]:
+    """One LLM call per scene; every result is verified before it can reach the screen."""
+    from ..schemas import SceneGraphics
+    if fx:
+        return []  # fixture runs have no recorded motion plan
+    words = len(scene["narration"].split())
+    want = max(2, min(9, round(words / 110)))  # ~1 animation per 40-45 s of narration
+    user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\nPlan about {want} animations.\n\n"
+            f"NARRATION:\n{scene['narration']}\n\nRESEARCH CLAIMS:\n" + "\n".join(claims[:80]) + f"\n\nReturn idx={scene['idx']}.")
+    try:
+        out, _ = complete_json(out=SceneGraphics, agent="motion_graphics", provider=prov, model=model,
+                               system=prompts.MOTION_GRAPHICS, user=user, user_id=user_id, project_id=project["id"],
+                               render_id=render_id, idem=f"project:{project['id']}:graphics:{scene['idx']}:{_h(scene['narration'])}",
+                               stage="script")
+    except Exception:  # noqa: BLE001 - no animations is better than a failed video
+        return []
+    return verify_graphics(out.graphics, scene["narration"], claims)

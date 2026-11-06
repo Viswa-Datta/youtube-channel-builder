@@ -25,7 +25,7 @@ from ..storage import project_key, store
 
 STAGES = ["script", "voice", "footage", "blur", "assemble", "package"]
 WEIGHT = {"script": 10, "voice": 35, "footage": 5, "blur": 10, "assemble": 35, "package": 5}
-CARD_STYLE_VERSION = "cards-v5"
+CARD_STYLE_VERSION = "motion-v1"
 
 
 def sha(*parts) -> str:
@@ -84,6 +84,13 @@ def stage_script(c: Ctx) -> None:
         text = agents.expand_scene(c.project, s, target, sc, c.prov, c.model, c.fx, c.uid, c.rid)
         db.x("update scenes set narration=%s, updated_at=now() where id=%s", (text, s["id"]))
         c.progress("script", (k + 1) / len(scenes), f"scene {s['idx']} expanded")
+    # Motion graphics: planned on the final narration so each animation lands on the sentence it explains.
+    for s in c.scenes():
+        if s.get("graphics") is None and s["narration"].strip():
+            sc = [cl["claim"] for cl in claims if cl["scene_idx"] in (None, s["idx"])]
+            g = agents.plan_graphics(c.project, s, sc, c.prov, c.model, c.fx, c.uid, c.rid)
+            db.x("update scenes set graphics=%s where id=%s", (db.jsonb(g), s["id"]))
+            c.progress("script", 1.0, f"scene {s['idx']}: {len(g)} animations planned")
     words = sum(len(s["narration"].split()) for s in c.scenes())
     if words < 0.85 * total_words:
         raise agents.BusinessRuleViolation(f"narration is {words} words; {c.project['target_minutes']} min needs ~{total_words}")
@@ -276,7 +283,7 @@ def stage_footage(c: Ctx) -> str | None:
     return "wait" if waiting else None
 
 
-AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 3, 6, 2
+AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 4, 10, 3
 
 
 def stage_footage_auto(c: Ctx) -> None:
@@ -337,7 +344,7 @@ def stage_footage_auto(c: Ctx) -> None:
                 nv += video
                 ni += not video
         # generic B-roll from free stock libraries (only if keys are set) when real footage is thin
-        if nv < 2 and nst < AUTO_MAX_STOCK:
+        if nv < 3 and nst < AUTO_MAX_STOCK:
             for n in [n for n in needs if n["tier"] == "stock_broll"] or [{"search_query": s["title"], "tier": "stock_broll"}]:
                 for cand in sources.search_scene(dict(n))[:AUTO_MAX_STOCK - nst]:
                     if cand.source_url in used or not cand.media_url:
@@ -477,98 +484,204 @@ def stage_blur(c: Ctx) -> None:
 
 
 # ------------------------------------------------------------------ stage: assemble
+ANIM_SECONDS = {"route": 9.0, "place": 7.0, "counter": 5.5, "bars": 8.0, "timeline": 9.0, "points": 8.0, "quote": 7.0}
+MOVES = ["in", "right", "out", "left", "up"]
+
+
+def _niche(c: Ctx) -> str:
+    if not hasattr(c, "_niche"):
+        from ..agents.niches import preset_for
+        ch = db.q1("select niche, sub_niche from channels where id=%s", (c.project["channel_id"],)) or {}
+        c._niche = preset_for(ch.get("niche"), ch.get("sub_niche"))["key"]
+    return c._niche
+
+
+def _subject_latlon(c: Ctx):
+    if not hasattr(c, "_latlon"):
+        place = _case(c).get("location")
+        hit = maps.geocode(place) if place else None
+        c._latlon = (hit[0], hit[1], place) if hit else None
+    return c._latlon
+
+
+def _anchor_time(anchor: str, sents: list[dict]) -> float | None:
+    """Start time of the sentence that best matches the anchor words (the animation lands as it is spoken)."""
+    aw = set(re.findall(r"[a-z0-9']+", (anchor or "").lower()))
+    if len(aw) < 3 or not sents:
+        return None
+    best, score = None, 0.0
+    for x in sents:
+        sw = set(re.findall(r"[a-z0-9']+", x["text"].lower()))
+        sc = len(aw & sw) / len(aw)
+        if sc > score:
+            best, score = x, sc
+    return float(best["start"]) if best and score >= 0.6 else None
+
+
+def _anim_maker(kind: str, g: dict, bg_args: dict, accent):
+    """A callable (out, seconds) -> Path that renders the animation; the backdrop is built at render time."""
+    from ..media import anim
+
+    def make(out: Path, secs: float) -> Path:
+        bg = anim.Backdrop(**bg_args, accent=accent)
+        if kind == "title":
+            return anim.title_card(out, g["number"], g["title"], g.get("kicker", ""), secs, accent, bg)
+        if kind == "route":
+            return anim.route(out, tuple(g["a"]), tuple(g["b"]), secs, accent)
+        if kind == "place":
+            return anim.place(out, g["lat"], g["lon"], g["place_label"], secs, sub=g.get("title", "")[:40], accent=accent)
+        if kind == "counter":
+            return anim.counter(out, g["value"], g.get("unit", ""), g["title"][:60], secs, accent, bg=bg)
+        if kind == "bars":
+            return anim.bars(out, g.get("title", "")[:48], g["labels"], g["values"], g.get("unit", ""), secs, accent, bg=bg)
+        if kind == "timeline":
+            items = [(x.split(":", 1)[0].strip(), x.split(":", 1)[-1].strip()) for x in g["items"]]
+            return anim.timeline(out, items, secs, accent, g.get("title", "")[:48], bg=bg)
+        if kind == "points":
+            return anim.points(out, g.get("title", "")[:48], g["items"], secs, accent, bg=bg)
+        if kind == "quote":
+            return anim.quote(out, g["text"], g.get("title", "")[:40], secs, accent, bg=bg)
+        if kind == "framed":
+            return anim.framed_photo(out, Path(g["photo"]), secs, "", accent, tilt=g.get("tilt", -3.0), bg=bg)
+        raise ValueError(kind)
+    return make
+
+
 def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment], str]:
-    """Visual track for a scene: chapter card, then selected (blurred) clips, then document/timeline/statement cards."""
+    """Visual track for a scene, explainer-documentary style:
+    animated chapter title -> the planned animations (maps, routes, counters, bars, timelines...) placed on the
+    sentence they explain -> real footage and photos (camera moves, short cuts) filling the time between them.
+    Backgrounds of the animations change shot to shot (scene photo, satellite, glows, blueprint, paper...)."""
+    from ..media import anim
+    from ..media.cards import THUMB_ACCENTS
     dur = float(s["audio_duration_sec"])
-    d = c.work / "cards" / f"scene-{s['idx']}"
-    pack = c.project["production_pack"] or {}
-    timeline = (pack.get("research") or {}).get("timeline") or []
+    d = c.work / "anim" / f"scene-{s['idx']}"
+    d.mkdir(parents=True, exist_ok=True)
+    niche = _niche(c)
+    accent = THUMB_ACCENTS.get(niche, (255, 205, 40))
+    sents = list(s["sentence_timings"] or [])
     clips = db.q("""select * from assets where scene_id=%s and selected and kind='clip' and meta ? 'blurred_key'
                     order by tier='real' desc, created_at""", (s["id"],))
     photos = db.q("""select * from assets where scene_id=%s and selected and kind='image' and storage_path is not null
                      order by created_at""", (s["id"],))
-    segs: list[compose.Segment] = []
-    first = min(6.0, dur)
-    segs.append(compose.Segment("image", cards.chapter_card(d / "chapter.png", s["idx"] + 1, s["chapter_title"] or s["title"],
-                                                               c.project["selected_title"] or c.project["title"], seed=s["idx"]), first))
-    remaining = dur - first
-    # Location map early in the video (scene 0), when the case has a place.
-    place = _case(c).get("location")
-    map_key = None
-    if s["idx"] == 0 and place and remaining > 10:
-        mp = maps.location_map(d / "map.png", place, kicker="WHERE IT HAPPENED", seed=s["idx"])
-        if mp:
-            take = min(9.0, remaining - 2)
-            segs.append(compose.Segment("image", mp, take, pan="right"))
-            remaining -= take
-            map_key = place
-    # Real footage first: up to ~70% of the scene, each clip up to 60 s, honouring the in/out points set on the desk.
-    budget = remaining * 0.7 if photos or s["on_screen_text"] else remaining
+    photo_paths = [c.local(a["storage_path"]) for a in photos]
+    latlon = _subject_latlon(c)
+    nk = [0]
+
+    def backdrop() -> dict:
+        k = nk[0]
+        nk[0] += 1
+        style = anim.pick_style(s["idx"], k, niche, bool(photo_paths), bool(latlon))
+        return {"style": style, "niche": niche, "seed": s["idx"] * 31 + k,
+                "photo": str(photo_paths[(s["idx"] + k) % len(photo_paths)]) if photo_paths else None,
+                "latlon": latlon[:2] if latlon else None}
+
+    def anim_seg(kind: str, g: dict, secs: float) -> compose.Segment:
+        bg = backdrop()
+        name = f"{kind}-{sha(kind, g, bg, round(secs, 2))[:10]}.mp4"
+        return compose.Segment("anim", d / name, secs, make=_anim_maker(kind, g, bg, accent))
+
+    # 1) planned animations, placed where the narration talks about them
+    gs = [dict(g) for g in (s.get("graphics") or [])]
+    if s["idx"] == 0 and latlon and not any(g["kind"] == "place" for g in gs):
+        gs.insert(0, {"kind": "place", "lat": latlon[0], "lon": latlon[1], "anchor": "",
+                      "place_label": (_case(c).get("case_name") or latlon[2]).split(",")[0][:34], "title": latlon[2][:40],
+                      "_at": 5.5})
+    if not any(g["kind"] == "bars" for g in gs):  # the script's sourced chart, if any, becomes animated bars
+        pack = c.project["production_pack"] or {}
+        ch = next((x.get("chart") for x in (pack.get("script") or {}).get("scenes", []) if x.get("idx") == s["idx"]), None)
+        if ch:
+            gs.append({"kind": "bars", "title": ch["title"], "labels": ch["labels"], "values": [float(v) for v in ch["values"]],
+                       "unit": ch.get("unit", ""), "anchor": ""})
+    TITLE = min(5.0, dur)
+    events: list[tuple[float, dict]] = []
+    unplaced = []
+    for g in gs:
+        t = g.get("_at") or _anchor_time(g.get("anchor", ""), sents)
+        (events.append((t, g)) if t is not None else unplaced.append(g))
+    # graphics without a matching sentence are spread through the free part of the scene
+    for i, g in enumerate(unplaced):
+        events.append((TITLE + (dur - TITLE) * (i + 1) / (len(unplaced) + 1), g))
+    events.sort(key=lambda e: e[0])
+    placed, cursor = [], TITLE + 2.0
+    for t, g in events:
+        secs = ANIM_SECONDS.get(g["kind"], 7.0)
+        t = max(t, cursor)
+        if t + secs > dur - 1.0:
+            continue
+        placed.append((t, secs, g))
+        cursor = t + secs + 4.0  # at least a few seconds of footage between animations
+
+    # 2) footage queue: clips are cut into short shots at moving in-points; photos get camera moves
+    media = []
     for a in clips:
-        if remaining <= 2 or budget <= 2:
-            break
         p = c.local(a["meta"]["blurred_key"])
-        src_len = duration(p)
-        a_in = float(a["in_sec"] or 0)
-        a_out = float(a["out_sec"] or src_len)
-        avail = max(1.0, min(src_len, a_out) - a_in)
-        cap = 60.0 if a["tier"] == "real" else 20.0
-        take = min(remaining, budget, max(4.0, min(cap, avail)))
-        segs.append(compose.Segment("clip", p, take, in_sec=a_in))
-        remaining -= take
-        budget -= take
-    # Photos and documents from archives: slow zoom/pan, ~8 s each.
-    for i, a in enumerate(photos):
-        if remaining <= 4:
-            break
-        take = min(8.0, remaining - 2)
-        segs.append(compose.Segment("image", c.local(a["storage_path"]), take, pan="right" if i % 2 else "left"))
-        remaining -= take
-    # generated cards fill the rest, changing every ~16 s
-    sentences = [x["text"] for x in (s["sentence_timings"] or [])]
-    docs = list(s["on_screen_text"])
-    pool: list[tuple[str, object]] = [("doc", i) for i in range(len(docs))]
-    chart = next((x.get("chart") for x in (pack.get("script") or {}).get("scenes", []) if x.get("idx") == s["idx"]), None)
-    if chart:
-        pool.insert(0, ("chart", chart))
-    if timeline:
-        pool.append(("timeline", None))
-    # statement cards: substantive sentences (9-32 words) that carry a fact, spread across the scene
-    cands = [t for t in sentences if 9 <= len(t.split()) <= 32]
-    key_sents = [t for t in cands if re.search(r"\d|record|court|evidence|DNA|database|policy|warrant|laborator|affidavit|clear", t)]
-    key_sents = (key_sents or cands)[:10]
-    stmts = [("statement", t) for t in key_sents]
-    mixed: list[tuple[str, object]] = []
-    for i in range(max(len(pool), len(stmts))):  # interleave documents and statements
-        if i < len(pool):
-            mixed.append(pool[i])
-        if i < len(stmts):
-            mixed.append(stmts[i])
-    pool = mixed or [("statement", s["title"])]
-    n_cards = max(1, int(round(remaining / 16.0)))
-    per = remaining / n_cards
-    for i in range(n_cards):
-        kind, val = pool[i % len(pool)]
-        out = d / f"card-{i:02d}.png"
-        if kind == "doc":
-            lines = [("> " if k == val else "  ") + d for k, d in enumerate(docs)]
-            cards.document_card(out, s["title"], lines, f"Scene {s['idx'] + 1} of {n_scenes}", seed=s["idx"] * 100 + i)
-        elif kind == "chart":
-            cards.chart_card(out, val["title"], val["labels"], [float(v) for v in val["values"]], val.get("unit", ""),
-                             note="Source: research notes for this video (see description)", seed=s["idx"] * 100 + i)
-        elif kind == "timeline":
-            items = [(t.split(":", 1)[0][:14], t.split(":", 1)[-1].strip()[:60]) for t in timeline[:6]]
-            cards.timeline_card(out, items, highlight=min(len(items) - 1, s["idx"] * len(items) // max(1, n_scenes)),
-                                title="Timeline", seed=i)
-        else:
-            cards.statement_card(out, str(val), s["chapter_title"] or "", seed=s["idx"] * 100 + i)
-        segs.append(compose.Segment("image", out, per, pan="right" if i % 2 == 0 else "left"))
-    # exact length: the last segment absorbs rounding
+        src = duration(p)
+        a_in, a_out = float(a["in_sec"] or 0), float(a["out_sec"] or src)
+        media.append({"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, min(src, a_out)), "pos": a_in,
+                      "cap": 14.0 if a["tier"] == "real" else 10.0})
+    for i, p in enumerate(photo_paths):
+        media.append({"kind": "photo", "path": p, "n": i})
+    order = []  # interleave clips and photos so the look keeps changing
+    cl = [m for m in media if m["kind"] == "clip"]
+    ph = [m for m in media if m["kind"] == "photo"]
+    for i in range(max(len(cl), len(ph))):
+        order += cl[i:i + 1] + ph[i:i + 1]
+    mq = [0]
+    uses = [0]
+    fallback_sents = [x for x in sents if 8 <= len(x["text"].split()) <= 30]
+
+    def fill(t0: float, t1: float, segs: list) -> None:
+        left = t1 - t0
+        while left > 0.05:
+            if left < 2.5 and segs:
+                segs[-1].duration += left
+                return
+            if order:
+                m = order[mq[0] % len(order)]
+                mq[0] += 1
+                uses[0] += 1
+                if m["kind"] == "clip":
+                    take = min(m["cap"], left, m["out"] - m["in"])
+                    if m["pos"] + take > m["out"]:
+                        m["pos"] = m["in"]  # wrap around inside the clip
+                    segs.append(compose.Segment("clip", m["path"], max(take, min(left, 2.5)), in_sec=m["pos"]))
+                    m["pos"] += take
+                else:
+                    take = min(7.0, left)
+                    if uses[0] % 5 == 3 and take >= 5:  # now and then: the photo as a framed print over a backdrop
+                        segs.append(anim_seg("framed", {"photo": str(m["path"]), "tilt": -3.0 if m["n"] % 2 else 2.5}, take))
+                    else:
+                        segs.append(compose.Segment("image", m["path"], take, pan=MOVES[(m["n"] + uses[0]) % len(MOVES)], photo=True))
+                left -= segs[-1].duration
+            else:  # no footage at all for this scene: the key line being spoken, animated over a changing backdrop
+                tm = t1 - left
+                x = next((x for x in fallback_sents if float(x["start"]) >= tm - 1), None) or \
+                    (fallback_sents[uses[0] % len(fallback_sents)] if fallback_sents else None)
+                uses[0] += 1
+                take = min(8.0, left)
+                if x:
+                    segs.append(anim_seg("quote", {"text": x["text"], "title": s["chapter_title"] or ""}, take))
+                else:
+                    segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"]}, take))
+                left -= take
+
+    segs: list[compose.Segment] = []
+    segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"],
+                                   "kicker": (c.project["selected_title"] or c.project["title"])[:70]}, TITLE))
+    t = TITLE
+    for (t_start, secs, g) in placed:
+        fill(t, t_start, segs)
+        segs.append(anim_seg(g["kind"], g, secs))
+        t = t_start + secs
+    fill(t, dur, segs)
     total = sum(x.duration for x in segs)
-    segs[-1].duration += dur - total
-    h = sha(CARD_STYLE_VERSION, s["narration_hash"], dur, [str(x.path.name) for x in segs], [a["meta"]["blurred_key"] for a in clips],
-            [(str(a["in_sec"]), str(a["out_sec"])) for a in clips], [a["storage_path"] for a in photos], map_key,
-            c.project["selected_title"], timeline)
+    segs[-1].duration += dur - total  # exact length
+    if segs[-1].duration < 0.5 and len(segs) > 1:
+        segs[-2].duration += segs[-1].duration
+        segs.pop()
+    h = sha(CARD_STYLE_VERSION, s["narration_hash"], dur, [(x.kind, x.path.name, round(x.duration, 2), round(x.in_sec, 2), x.pan)
+                                                           for x in segs])
     return segs, h
 
 
@@ -581,6 +694,14 @@ def _case(c: Ctx) -> dict:
 
 def stage_assemble(c: Ctx) -> None:
     scenes = c.scenes()
+    missing = [s for s in scenes if s.get("graphics") is None and s["narration"].strip()]
+    if missing:  # projects scripted before motion graphics existed get them now
+        claims = db.q("select * from research_claims where project_id=%s order by claim", (c.pid,))
+        for s in missing:
+            sc = [cl["claim"] for cl in claims if cl["scene_idx"] in (None, s["idx"])]
+            g = agents.plan_graphics(c.project, s, sc, c.prov, c.model, c.fx, c.uid, c.rid)
+            db.x("update scenes set graphics=%s where id=%s", (db.jsonb(g), s["id"]))
+            s["graphics"] = g
     parts, wavs = [], []
     for k, s in enumerate(scenes):
         key = project_key(c.pid, "clips", f"scene-{s['idx']}.mp4")

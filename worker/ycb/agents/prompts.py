@@ -89,3 +89,21 @@ in total; a thumbnail concept and image prompt that use NO graphic imagery, no r
 private people; thumbnail_text: 2-5 punchy words (<= 40 chars) that create curiosity and do NOT repeat the title,
 using a striking true number from the research when there is one (e.g. "410 DAYS TO THE SKY", "THE 1945 CRASH"); and a disclosure_line stating that narration is AI-generated and that
 any illustrative footage is labelled. Return JSON only."""
+
+MOTION_GRAPHICS = """You are the Motion Graphics Agent for a documentary channel (styled like big explainer channels:
+maps that fly to places, routes that draw themselves, numbers that count up, bars that grow). Read one scene's
+narration and plan the animations that appear WHILE the narrator explains something. Kinds:
+- place: when a specific location matters. place = a geocodable name ("Empire State Building, New York",
+  "Strait of Hormuz"); place_label = short on-screen name; title = optional sub-label (district, country).
+- route: travel, distance, supply lines, journeys, borders between two places. from_place, to_place geocodable.
+- counter: one striking number (height, cost, deaths in a disaster, speed, year count). value = the number exactly as
+  in the narration/claims, unit (e.g. "feet", "million USD", "km/h"), title = what it measures (under 50 chars).
+- bars: 2-6 comparable numbers. title, unit, labels, values (each value exactly as written in the narration/claims).
+- timeline: 3-6 dated events. items like "1929: Demolition of the Waldorf-Astoria begins" (year must be in the text).
+- points: 2-5 short phrases (max 7 words each) summarising reasons, causes or steps the narration lists; title.
+- quote: one powerful sentence copied word for word from the narration; title = short label.
+anchor: copy 5-12 consecutive words EXACTLY from the narration where the animation should start.
+Rules: use ONLY facts and numbers that appear in the narration or research claims; never invent or round numbers;
+never estimate a distance (the app computes distances itself). Spread animations through the scene, in narration
+order, at least 20 seconds of narration apart. Prefer place/route/counter/bars/timeline; use points and quote at
+most once each per scene. Return JSON only: {"idx": <scene idx>, "graphics": [...]}."""
