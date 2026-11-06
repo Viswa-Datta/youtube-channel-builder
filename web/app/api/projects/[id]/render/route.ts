@@ -18,6 +18,9 @@ export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: st
   const { sb, user } = await apiUser();
   const p = await owned<{ id: string; status: string; tier: Tier; target_minutes: number }>(sb, "projects", id);
   if (!["pack_ready", "review", "failed", "approved"].includes(p.status)) throw new HttpError(409, `Project is ${p.status}; wait for it to finish.`);
+  const { count: active } = await sb.from("renders").select("id", { count: "exact", head: true }).eq("project_id", id)
+    .in("status", ["queued", "running", "waiting_user", "paused_cap"]);
+  if (active) throw new HttpError(409, "This video is already being made. Cancel it first to start again.");
   const b = await body(req, Req);
   if (b.target_minutes && b.target_minutes !== p.target_minutes) {
     // New length: the narration is rewritten from each scene's draft at the new length, then the voice is re-recorded

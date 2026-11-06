@@ -318,9 +318,10 @@ def nasa(query: str, n: int = 8, media: str = "video") -> list[Evidence]:
 
 
 def nasa_media_url(manifest_url: str, media: str = "video") -> str | None:
+    """Pick a 1080p-ish rendition; NASA "orig" files are often multi-gigabyte masters."""
     r = _get(manifest_url)
     files = r.json() if r else []
-    prefs = ("~orig.mp4", "~large.mp4", "~medium.mp4", "~mobile.mp4") if media == "video" else ("~large.jpg", "~orig.jpg", "~medium.jpg")
+    prefs = ("~large.mp4", "~medium.mp4", "~orig.mp4", "~mobile.mp4") if media == "video" else ("~large.jpg", "~orig.jpg", "~medium.jpg")
     for p in prefs:
         for f in files:
             if f.endswith(p):

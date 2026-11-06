@@ -17,6 +17,8 @@ export const POST = handler(async (_req: Request, ctx: { params: Promise<{ id: s
   const { error: e2 } = await admin.from("renders").update({ status: "cancelled", error: "Cancelled by you", finished_at: now }).eq("id", id);
   if (e2) throw e2;
   await sb.from("help_requests").update({ status: "skipped", resolved_at: now }).eq("project_id", r.project_id).eq("status", "open");
-  await admin.from("projects").update({ status: "pack_ready" }).eq("id", r.project_id).eq("status", "rendering");
+  const { count: others } = await admin.from("renders").select("id", { count: "exact", head: true }).eq("project_id", r.project_id)
+    .in("status", ["queued", "running", "waiting_user", "paused_cap"]);
+  if (!others) await admin.from("projects").update({ status: "pack_ready" }).eq("id", r.project_id).eq("status", "rendering");
   return NextResponse.json({ ok: true });
 });

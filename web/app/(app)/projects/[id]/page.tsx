@@ -36,6 +36,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const { ctx, defaultTier } = await costContext(p.target_minutes, p.tier);
   const activeJob = job ?? jobs?.[0]?.id;
   const latest = renders?.[0];
+  const activeRender = renders?.find((r) => ACTIVE.includes(r.status));
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -43,14 +44,14 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
         <div className="min-w-0">
           <h1 className="font-serif text-2xl">{p.title}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <LengthSelect key={p.target_minutes} projectId={id} minutes={p.target_minutes} disabled={!!(latest && ACTIVE.includes(latest.status))}
+            <LengthSelect key={p.target_minutes} projectId={id} minutes={p.target_minutes} disabled={!!activeRender}
               rendered={!!(scenes ?? []).some((s: { narration?: string }) => (s.narration ?? "").trim())} />
             <span>· {p.tier} · status {p.status}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {latest && ACTIVE.includes(latest.status) && <CancelRenderButton renderId={latest.id} size="default" />}
-          {p.status !== "pack_pending" && !(latest && ACTIVE.includes(latest.status)) && (
+          {activeRender && <CancelRenderButton renderId={activeRender.id} size="default" />}
+          {p.status !== "pack_pending" && !activeRender && (
             <GenerateButton label={latest ? "Re-render changed scenes" : "Generate whole video"} action="whole_video" minutes={p.target_minutes}
               defaultTier={p.tier} ctx={ctx} endpoint={`/api/projects/${id}/render`} payload={{}}
               chooseMinutes redirectTo={`/projects/${id}?job={job}`} />

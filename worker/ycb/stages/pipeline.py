@@ -405,6 +405,19 @@ def _download(c: Ctx, asset: dict) -> None:
     image = asset["kind"] == "image"
     ext = ".jpg" if image else ".mp4"
     key = project_key(c.pid, "images" if image else "clips", "raw", f"{asset['id']}{ext}")
+    if not store().exists(key) and not image and meta.get("auto_rights"):
+        # Automatic picks only ever use the first 2 minutes: let FFmpeg read just that part straight from the source
+        # instead of downloading the whole (sometimes multi-GB) file first.
+        from ..media.ff import run as ff
+        out = c.work / "dl" / f"{asset['id']}{ext}"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            ff(["-rw_timeout", "60000000", "-user_agent", UA.get("User-Agent", "ycb"), "-t", "120", "-i", url, "-t", "120",
+                "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", str(out)], timeout=600)
+            store().put(out, key, "video/mp4")
+        except Exception:  # noqa: BLE001 - some servers refuse partial reads; fall back to a full download
+            out.unlink(missing_ok=True)
     if not store().exists(key):
         tmp = c.work / "dl" / f"{asset['id']}.src"
         tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -428,18 +441,43 @@ def _download(c: Ctx, asset: dict) -> None:
     db.x("update assets set storage_path=%s where id=%s", (key, asset["id"]))
 
 
-def _fetch_selected(c: Ctx) -> None:
-    """Download every approved asset that is still only a link (approved on the Footage Desk)."""
-    for a in db.q("""select * from assets where project_id=%s and selected and storage_path is null
-                     and kind in ('clip','image') and tier in ('real','news_document','stock_broll')""", (c.pid,)):
+FETCH_WORKERS = 4
+
+
+def _fetch_selected(c: Ctx, stage: str = "blur", share: float = 0.6) -> None:
+    """Download every approved asset that is still only a link, 4 at a time, reporting progress as it goes."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    todo = db.q("""select * from assets where project_id=%s and selected and storage_path is null
+                   and kind in ('clip','image') and tier in ('real','news_document','stock_broll')""", (c.pid,))
+    if not todo:
+        return
+
+    def one(a: dict):
         try:
             _download(c, a)
+            return None
         except Exception as e:  # noqa: BLE001 - a dead link or bad file drops that item, not the whole video
             if not (a["meta"] or {}).get("auto_rights"):
-                raise
+                return e
             meta = dict(a["meta"] or {})
             meta["download_error"] = f"{type(e).__name__}: {str(e)[:200]}"
             db.x("update assets set selected=false, meta=%s where id=%s", (db.jsonb(meta), a["id"]))
+            return None
+
+    done, err = 0, None
+    with ThreadPoolExecutor(FETCH_WORKERS) as pool:
+        futs = [pool.submit(one, a) for a in todo]
+        try:
+            for f in as_completed(futs):
+                done += 1
+                err = err or f.result()
+                c.progress(stage, share * done / len(todo), f"downloading footage {done}/{len(todo)}")
+        except BaseException:
+            for f in futs:
+                f.cancel()  # cancelled by the user: stop starting new downloads
+            raise
+    if err:
+        raise err
 
 
 # ------------------------------------------------------------------ stage: blur
@@ -470,7 +508,7 @@ def stage_blur(c: Ctx) -> None:
                 continue
             src = c.local(a["storage_path"])
             an = blur.analyse(src, text_pii=a["tier"] in ("real", "news_document"),
-                              on_progress=lambda f: c.progress("blur", (k + f * 0.5) / len(scenes), f"analysing scene {s['idx']}"))
+                              on_progress=lambda f: c.progress("blur", 0.6 + 0.4 * (k + f * 0.5) / len(scenes), f"analysing scene {s['idx']}"))
             out = c.work / "blurred" / f"{a['id']}.mp4"
             blur.render(src, out, an,
                         manual=[{"t_start": float(m["t_start"]), "t_end": float(m["t_end"]), "box": m["box"]} for m in manual],
@@ -488,7 +526,7 @@ def stage_blur(c: Ctx) -> None:
             meta["blurred_key"] = out_key
             db.x("update assets set meta=%s where id=%s", (db.jsonb(meta), a["id"]))
         db.x("update scenes set blur_status='needs_review' where id=%s", (s["id"],))
-        c.progress("blur", (k + 1) / len(scenes), f"scene {s['idx']} blurred")
+        c.progress("blur", 0.6 + 0.4 * (k + 1) / len(scenes), f"scene {s['idx']} ready")
 
 
 # ------------------------------------------------------------------ stage: assemble

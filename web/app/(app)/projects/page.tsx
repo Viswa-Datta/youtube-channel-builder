@@ -14,8 +14,9 @@ export default async function Projects() {
     <div className="mx-auto max-w-5xl space-y-3">
       <h1 className="font-serif text-2xl">Projects</h1>
       {(data ?? []).map((p) => {
-        const latest = [...((p.renders as { id: string; status: string; version: number; progress: number }[] | null) ?? [])].sort((a, b) => b.version - a.version)[0];
-        const active = latest && ACTIVE.includes(latest.status);
+        const latest = ((p.renders as { id: string; status: string; version: number; progress: number }[] | null) ?? [])
+          .filter((r) => ACTIVE.includes(r.status)).sort((a, b) => a.version - b.version)[0];
+        const active = !!latest;
         return (
           <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-3 hover:bg-muted">
             <Link href={`/projects/${p.id}`} className="min-w-0 flex-1 font-medium">{p.title}</Link>
