@@ -18,6 +18,8 @@ export interface CostContext {
  * Shown before every generation. Line items per stage, provider and plan, the free path beside every paid
  * line, a Free/Standard/Premium toggle that re-prices instantly, and the hard cap check.
  */
+export const LENGTHS = [8, 12, 20, 30, 45, 60];
+
 export function CostModal(props: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -26,15 +28,18 @@ export function CostModal(props: {
   title: string;
   defaultTier: Tier;
   ctx: CostContext;
-  onConfirm: (tier: Tier) => Promise<void>;
+  onConfirm: (tier: Tier, minutes: number) => Promise<void>;
+  /** Show a video-length picker (each video can have its own length). */
+  chooseMinutes?: boolean;
 }) {
   const [tier, setTier] = useState<Tier>(props.defaultTier);
+  const [minutes, setMinutes] = useState<number>(props.minutes);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const est = useMemo(() => estimateWith(P, props.action, tier, props.minutes), [props.action, tier, props.minutes]);
+  const est = useMemo(() => estimateWith(P, props.action, tier, minutes), [props.action, tier, minutes]);
   const all = useMemo(
-    () => (["free", "standard", "premium"] as Tier[]).map((t) => [t, estimateWith(P, props.action, t, props.minutes).total_usd] as const),
-    [props.action, props.minutes],
+    () => (["free", "standard", "premium"] as Tier[]).map((t) => [t, estimateWith(P, props.action, t, minutes).total_usd] as const),
+    [props.action, minutes],
   );
   const remaining = props.ctx.monthlyCap - props.ctx.monthSpend;
   const overCap = est.total_usd > remaining + 1e-9;
@@ -46,6 +51,19 @@ export function CostModal(props: {
         <DialogTitle>Cost before you generate: {props.title}</DialogTitle>
         <DialogDescription>Prices verified {est.prices_last_verified}. You are charged only what the ledger records.</DialogDescription>
 
+        {props.chooseMinutes && (
+          <div className="mt-4">
+            <div className="mb-1 text-sm font-medium">Video length</div>
+            <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Video length">
+              {LENGTHS.map((m) => (
+                <button key={m} role="radio" aria-checked={minutes === m} onClick={() => setMinutes(m)}
+                  className={`rounded-md border px-1 py-1.5 text-sm transition ${minutes === m ? "border-accent bg-accent/10 font-medium" : "hover:bg-muted"}`}>
+                  {m} min
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Quality tier">
           {all.map(([t, total]) => (
             <button
@@ -104,7 +122,7 @@ export function CostModal(props: {
               setBusy(true);
               setErr(null);
               try {
-                await props.onConfirm(tier);
+                await props.onConfirm(tier, minutes);
                 props.onOpenChange(false);
               } catch (e) {
                 setErr((e as Error).message);

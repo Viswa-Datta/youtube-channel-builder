@@ -77,6 +77,9 @@ def run_one(kinds: list[str] | None = None) -> bool:
             dispatch(job, hb)
             queue.complete(str(job["id"]))
             print(f"[{settings.worker_id}] done {job['kind']}:{job.get('stage') or ''}", flush=True)
+        except queue.JobCancelled:
+            queue.release_cancelled(str(job["id"]))
+            print(f"[{settings.worker_id}] cancelled {job['kind']}:{job.get('stage') or ''}", flush=True)
         except MissingConfig as e:
             queue.fail_permanently(str(job["id"]), str(e))  # never fake output; tell the user which key is missing
             _on_render_failure(job, str(e), True)
@@ -90,7 +93,8 @@ def run_one(kinds: list[str] | None = None) -> bool:
         except (AgentOutputInvalid, agents.BusinessRuleViolation, Exception) as e:
             msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()[-2000:]}"
             row = queue.fail(str(job["id"]), msg)
-            _on_render_failure(job, f"{type(e).__name__}: {e}", bool(row and row["status"] == "failed"))
+            if row is not None:  # None: the user cancelled this job, leave the render as cancelled
+                _on_render_failure(job, f"{type(e).__name__}: {e}", row["status"] == "failed")
             print(f"[{settings.worker_id}] failed {job['kind']}: {e}", file=sys.stderr, flush=True)
     return True
 

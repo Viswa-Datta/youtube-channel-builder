@@ -24,7 +24,7 @@ export function JobWatcher({ jobId, label }: { jobId: string; label: string }) {
         const j: Job = await r.json();
         setJob(j);
         // Refresh the page once each time the outcome changes (finished, or paused for the user at the Footage Desk).
-        const state = j.render?.status === "waiting_user" ? "waiting" : j.status === "succeeded" && (!j.render || j.render.status === "succeeded") ? "done" : j.status === "failed" ? "failed" : "";
+        const state = j.render?.status === "waiting_user" ? "waiting" : j.status === "succeeded" && (!j.render || j.render.status === "succeeded") ? "done" : j.status === "failed" ? "failed" : j.status === "cancelled" ? "cancelled" : "";
         if (state && seen.current !== state) {
           seen.current = state;
           router.refresh();

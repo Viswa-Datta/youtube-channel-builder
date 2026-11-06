@@ -52,9 +52,12 @@ class Ctx:
         return db.q("select * from scenes where project_id=%s order by idx", (self.pid,))
 
     def progress(self, stage: str, frac: float, note: str = "") -> None:
+        if hasattr(self.hb, "check"):
+            self.hb.check()  # stops here within seconds of the user pressing Cancel
         done = sum(WEIGHT[s] for s in STAGES[:STAGES.index(stage)])
         total = done + WEIGHT[stage] * max(0.0, min(1.0, frac))
-        db.x("update renders set stage=%s, progress=%s, status='running' where id=%s", (stage, round(total, 2), self.rid))
+        db.x("update renders set stage=%s, progress=%s, status='running' where id=%s and status <> 'cancelled'",
+             (stage, round(total, 2), self.rid))
         self.hb.update(progress=round(frac * 100, 1), note=note)
 
     def local(self, key: str) -> Path:
@@ -955,8 +958,13 @@ def run_stage(job: dict, hb: queue.Heartbeat) -> None:
         pass
     c = Ctx(job, hb)
     stage = job["stage"]
-    db.x("update renders set status='running', stage=%s where id=%s", (stage, c.rid))
-    if HANDLERS[stage](c) == "wait":
+    db.x("update renders set status='running', stage=%s where id=%s and status <> 'cancelled'", (stage, c.rid))
+    if hasattr(hb, "check"):
+        hb.check(force=True)
+    res = HANDLERS[stage](c)
+    if hasattr(hb, "check"):
+        hb.check(force=True)  # cancelled during this stage: do not start the next one
+    if res == "wait":
         db.x("update renders set status='waiting_user', stage='footage_desk' where id=%s", (c.rid,))
         return  # the user continues from the Footage Desk, which enqueues the next stage
     nxt = STAGES.index(stage) + 1

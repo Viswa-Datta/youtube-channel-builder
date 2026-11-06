@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/supabase/server";
 import { costContext } from "@/lib/context";
 import { JobWatcher } from "@/components/job-watcher";
+import { CancelRenderButton } from "@/components/cancel-render-button";
 import { GenerateButton } from "@/components/generate-button";
 import { FoiaLog } from "@/components/foia-log";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export const metadata = { title: "Production pack" };
 
 const claimVariant = { confirmed: "success", disputed: "warning", unknown: "danger" } as const;
+
+const ACTIVE = ["queued", "running", "waiting_user", "paused_cap"];
 
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ job?: string }> }) {
   const { id } = await params;
@@ -41,15 +44,19 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           <p className="text-sm text-muted-foreground">{p.target_minutes} min · {p.tier} · status {p.status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {p.status !== "pack_pending" && (
+          {latest && ACTIVE.includes(latest.status) && <CancelRenderButton renderId={latest.id} size="default" />}
+          {p.status !== "pack_pending" && !(latest && ACTIVE.includes(latest.status)) && (
             <GenerateButton label={latest ? "Re-render changed scenes" : "Generate whole video"} action="whole_video" minutes={p.target_minutes}
               defaultTier={p.tier} ctx={ctx} endpoint={`/api/projects/${id}/render`} payload={{}}
-              redirectTo={`/projects/${id}?job={job}`} />
+              chooseMinutes={!latest} redirectTo={`/projects/${id}?job={job}`} />
           )}
           {latest && <Button variant="outline" asChild><Link href={`/projects/${id}/footage`}>Footage Desk</Link></Button>}
           {latest?.status === "succeeded" && <Button variant="outline" asChild><Link href={`/projects/${id}/studio`}>Review Studio</Link></Button>}
         </div>
       </div>
+      {latest?.status === "cancelled" && (
+        <p className="rounded-md border p-3 text-sm text-muted-foreground">The last render was cancelled. Press <b>Re-render changed scenes</b> to make the video again.</p>
+      )}
       {latest?.status === "waiting_user" && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-accent bg-accent/10 p-3 text-sm">
           <span><b>Your video is paused at the Footage Desk.</b> The app found footage to review and has a few things only you can do (like saving an official clip from YouTube).</span>

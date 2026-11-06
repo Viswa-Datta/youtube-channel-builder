@@ -33,12 +33,24 @@ def claim(kinds: list[str] | None = None) -> dict | None:
     return db.q1("select * from claim_job(%s::text, %s::int, %s::text[])", (settings.worker_id, settings.lease_seconds, kinds))
 
 
+class JobCancelled(Exception):
+    """The user pressed Cancel: stop work, keep the job marked cancelled."""
+
+
 def complete(job_id: str) -> None:
     db.x("""update jobs set status='succeeded', progress=100, finished_at=now(), locked_by=null, locked_until=null
-            where id=%s and locked_by=%s""", (job_id, settings.worker_id))
+            where id=%s and locked_by=%s and status='running'""", (job_id, settings.worker_id))
+
+
+def release_cancelled(job_id: str) -> None:
+    db.x("update jobs set locked_by=null, locked_until=null, finished_at=coalesce(finished_at, now()) where id=%s", (job_id,))
 
 
 def fail(job_id: str, error: str) -> dict | None:
+    st = db.q1("select status from jobs where id=%s", (job_id,))
+    if st and st["status"] == "cancelled":  # an error after the user cancelled is not retried
+        release_cancelled(job_id)
+        return None
     return db.q1("select * from fail_job(%s::uuid, %s::text, %s::text)", (job_id, settings.worker_id, error))
 
 
@@ -63,6 +75,8 @@ class Heartbeat:
         self._stop = threading.Event()
         self._t = threading.Thread(target=self._run, daemon=True)
         self.lost = False
+        self.cancelled = False
+        self._checked = 0.0
 
     def __enter__(self) -> "Heartbeat":
         self._t.start()
@@ -83,8 +97,19 @@ class Heartbeat:
                           (self.job_id, settings.worker_id, settings.lease_seconds, self.progress, self.note)).fetchone()
             if not (r and r["ok"]):
                 self.lost = True
+                st = c.execute("select status from jobs where id=%s::uuid", (self.job_id,)).fetchone()
+                self.cancelled = bool(st and st["status"] == "cancelled")
         finally:
             c.close()
+
+    def check(self, force: bool = False) -> None:
+        """Raise JobCancelled if the user cancelled. Looks at the database at most every 15 s unless forced."""
+        if not self.cancelled and (force or time.time() - self._checked > 15):
+            self._checked = time.time()
+            r = db.q1("select status from jobs where id=%s", (self.job_id,))
+            self.cancelled = bool(r and r["status"] == "cancelled")
+        if self.cancelled:
+            raise JobCancelled("cancelled by the user")
 
     def _run(self) -> None:
         interval = max(5, settings.lease_seconds // 3)

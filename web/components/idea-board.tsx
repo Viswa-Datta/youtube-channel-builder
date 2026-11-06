@@ -127,9 +127,9 @@ export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[];
       </div>
       {pick && (
         <CostModal open={!!pick} onOpenChange={(o) => !o && setPick(null)} action="production_pack" minutes={minutes} title={`Production pack: ${pick.title}`}
-          defaultTier={defaultTier} ctx={ctx}
-          onConfirm={async (tier) => {
-            const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea_id: pick.id, tier }) });
+          defaultTier={defaultTier} ctx={ctx} chooseMinutes
+          onConfirm={async (tier, target_minutes) => {
+            const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea_id: pick.id, tier, target_minutes }) });
             const j = await r.json();
             if (!r.ok) throw new Error(j.error);
             router.push(`/projects/${j.id}?job=${j.job.id}`);

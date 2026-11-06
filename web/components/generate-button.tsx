@@ -19,6 +19,8 @@ export function GenerateButton(props: {
   size?: ButtonProps["size"];
   /** Path to open after the job starts; "{job}" is replaced with the new job id. A string, not a function, so server pages can pass it. */
   redirectTo?: string;
+  /** Let the user pick this video's length in the cost dialog (sent as target_minutes). */
+  chooseMinutes?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -33,8 +35,10 @@ export function GenerateButton(props: {
         title={props.label}
         defaultTier={props.defaultTier}
         ctx={props.ctx}
-        onConfirm={async (tier) => {
-          const r = await fetch(props.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...props.payload, tier }) });
+        chooseMinutes={props.chooseMinutes}
+        onConfirm={async (tier, minutes) => {
+          const extra = props.chooseMinutes ? { target_minutes: minutes } : {};
+          const r = await fetch(props.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...props.payload, ...extra, tier }) });
           const j = await r.json();
           if (!r.ok) throw new Error(j.error ?? "failed");
           props.onStarted?.(j);
