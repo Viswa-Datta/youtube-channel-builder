@@ -99,6 +99,11 @@ def stage_script(c: Ctx) -> None:
 # ------------------------------------------------------------------ stage: voice (Voice Agent)
 def stage_voice(c: Ctx) -> None:
     p = c.project
+    if p["voice_provider"] != "kokoro" and settings.missing_for(p["voice_provider"]) and not c.fx:
+        # A paid voice was picked but its key is not set up: use the free built-in voice instead of failing.
+        db.x("update projects set voice_provider='kokoro', voice_id='am_michael' where id=%s", (c.pid,))
+        p = c.project = {**p, "voice_provider": "kokoro", "voice_id": "am_michael"}
+        c.progress("voice", 0.0, "paid voice has no key set up: using the free voice")
     scenes = c.scenes()
     remaining_chars = 0
     for s in scenes:

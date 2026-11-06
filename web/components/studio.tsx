@@ -152,7 +152,7 @@ export function Studio(props: {
           <CardHeader><CardTitle className="text-base">Voice</CardTitle><CardDescription>Changing voice or speed re-voices every scene at the next render.</CardDescription></CardHeader>
           <CardContent className="grid grid-cols-2 gap-2">
             <Select value={voice.provider} onChange={(e) => { const p = e.target.value; setVoice({ ...voice, provider: p, id: VOICES[p][0].id }); setDirty(true); }} aria-label="Voice provider">
-              <option value="kokoro">Kokoro (free)</option><option value="openai">OpenAI</option><option value="elevenlabs">ElevenLabs</option><option value="google">Google Chirp 3</option>
+              <option value="kokoro">Kokoro (free)</option><option value="openai">OpenAI (needs key)</option><option value="elevenlabs">ElevenLabs (needs key)</option><option value="google">Google Chirp 3 (needs key)</option>
             </Select>
             <Select value={voice.id} onChange={(e) => { setVoice({ ...voice, id: e.target.value }); setDirty(true); }} aria-label="Voice">
               {VOICES[voice.provider].map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
