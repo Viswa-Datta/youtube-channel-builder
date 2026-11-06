@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/supabase/server";
 import { costContext } from "@/lib/context";
 import { JobWatcher } from "@/components/job-watcher";
 import { CancelRenderButton } from "@/components/cancel-render-button";
+import { LengthSelect } from "@/components/length-select";
 import { GenerateButton } from "@/components/generate-button";
 import { FoiaLog } from "@/components/foia-log";
 import { Badge } from "@/components/ui/badge";
@@ -41,14 +42,18 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="font-serif text-2xl">{p.title}</h1>
-          <p className="text-sm text-muted-foreground">{p.target_minutes} min · {p.tier} · status {p.status}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <LengthSelect key={p.target_minutes} projectId={id} minutes={p.target_minutes} disabled={!!(latest && ACTIVE.includes(latest.status))}
+              rendered={!!(scenes ?? []).some((s: { narration?: string }) => (s.narration ?? "").trim())} />
+            <span>· {p.tier} · status {p.status}</span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {latest && ACTIVE.includes(latest.status) && <CancelRenderButton renderId={latest.id} size="default" />}
           {p.status !== "pack_pending" && !(latest && ACTIVE.includes(latest.status)) && (
             <GenerateButton label={latest ? "Re-render changed scenes" : "Generate whole video"} action="whole_video" minutes={p.target_minutes}
               defaultTier={p.tier} ctx={ctx} endpoint={`/api/projects/${id}/render`} payload={{}}
-              chooseMinutes={!latest} redirectTo={`/projects/${id}?job={job}`} />
+              chooseMinutes redirectTo={`/projects/${id}?job={job}`} />
           )}
           {latest && <Button variant="outline" asChild><Link href={`/projects/${id}/footage`}>Footage Desk</Link></Button>}
           {latest?.status === "succeeded" && <Button variant="outline" asChild><Link href={`/projects/${id}/studio`}>Review Studio</Link></Button>}

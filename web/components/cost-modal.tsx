@@ -62,6 +62,9 @@ export function CostModal(props: {
                 </button>
               ))}
             </div>
+            {minutes !== props.minutes && props.action === "whole_video" && (
+              <p className="mt-1 text-xs text-muted-foreground">New length: the script is rewritten to {minutes} minutes and the voice is re-recorded. Research and footage are kept.</p>
+            )}
           </div>
         )}
         <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Quality tier">

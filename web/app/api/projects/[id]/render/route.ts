@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser, body, handler, owned, HttpError } from "@/lib/api";
 import { startRender } from "@/lib/jobs";
+import { supabaseAdmin } from "@/lib/supabase/server";
 import type { Tier } from "@/lib/pricing";
 
 const Req = z.object({
@@ -19,9 +20,10 @@ export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: st
   if (!["pack_ready", "review", "failed", "approved"].includes(p.status)) throw new HttpError(409, `Project is ${p.status}; wait for it to finish.`);
   const b = await body(req, Req);
   if (b.target_minutes && b.target_minutes !== p.target_minutes) {
-    // Length can change until the first render writes the full narration (after that the script is fixed).
-    const { count } = await sb.from("renders").select("id", { count: "exact", head: true }).eq("project_id", id);
-    if (count) throw new HttpError(409, "The length is fixed once a video has been rendered.");
+    // New length: the narration is rewritten from each scene's draft at the new length, then the voice is re-recorded
+    // and the animations re-planned. Research, footage and the drafts are kept.
+    const { error } = await supabaseAdmin().from("scenes").update({ narration: "", graphics: null }).eq("project_id", id);
+    if (error) throw error;
   }
   if (Object.keys(b).length) await sb.from("projects").update({ ...b, approved_at: null }).eq("id", id);
   const { render, job } = await startRender(user.id, id, p.tier, b.target_minutes ?? p.target_minutes);

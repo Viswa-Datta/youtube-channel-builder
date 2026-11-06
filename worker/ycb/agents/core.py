@@ -506,17 +506,17 @@ def expand_scene(project: dict, scene: dict, target_words: int, claims: list[dic
             f"Target words: {target_words}\nResearch claims:\n{claim_txt}\nReturn idx={scene['idx']}.")
     out, _ = complete_json(out=SceneNarration, agent="script", provider=prov, model=model, system=prompts.SCRIPT_EXPAND,
                            user=user, user_id=user_id, project_id=project["id"], render_id=render_id,
-                           idem=f"project:{project['id']}:expand:{scene['idx']}:{_h(scene['draft'])}",
+                           idem=f"project:{project['id']}:expand:{scene['idx']}:{_h(scene['draft'])}:{target_words}",
                            fixture=_fx(fx, f"narration/scene-{scene['idx']}"), stage="script")
     if out.idx != scene["idx"]:
         raise BusinessRuleViolation("expanded narration is for the wrong scene")
     text = out.narration
     w = len(text.split())
     # Models often write short. Ask for a continuation (new facts from the claims, no repetition) until long enough.
-    for k in range(3):
+    for k in range(max(3, -(-target_words // 450))):  # long scenes (e.g. a short video re-made at 60 min) need more parts
         if w >= 0.9 * target_words or fx:
             break
-        more = target_words - w
+        more = min(900, target_words - w)
         cont_user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\n\nNARRATION SO FAR ({w} words):\n{text}\n\n"
                      f"Write the NEXT part of this scene's narration: about {more} words that continue naturally from the last "
                      f"sentence. Add detail and context from the research claims that the narration so far has not used; never "
@@ -524,7 +524,7 @@ def expand_scene(project: dict, scene: dict, target_words: int, claims: list[dic
                      f"Research claims:\n{claim_txt}\nReturn idx={scene['idx']}.")
         add, _ = complete_json(out=SceneNarration, agent="script", provider=prov, model=model, system=prompts.SCRIPT_EXPAND,
                                user=cont_user, user_id=user_id, project_id=project["id"], render_id=render_id,
-                               idem=f"project:{project['id']}:expand:{scene['idx']}:{_h(scene['draft'])}:more{k}", stage="script")
+                               idem=f"project:{project['id']}:expand:{scene['idx']}:{_h(scene['draft'])}:{target_words}:more{k}", stage="script")
         text = text.rstrip() + "\n\n" + add.narration.strip()
         w = len(text.split())
     if not (0.8 * target_words <= w <= 1.5 * target_words) and not fx:
