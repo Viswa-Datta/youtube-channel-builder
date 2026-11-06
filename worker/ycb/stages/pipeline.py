@@ -108,6 +108,12 @@ def stage_voice(c: Ctx) -> None:
         p = c.project = {**p, "voice_provider": "kokoro", "voice_id": "am_michael"}
         c.progress("voice", 0.0, "paid voice has no key set up: using the free voice")
     scenes = c.scenes()
+    if any(len(s["narration"].split()) < 20 for s in scenes):
+        # The narration was cleared after the script step (e.g. the length was changed): write it again first,
+        # never record silence.
+        c.progress("voice", 0.0, "narration missing: writing the script again first")
+        stage_script(c)
+        scenes = c.scenes()
     remaining_chars = 0
     for s in scenes:
         nh = sha(s["narration"], p["voice_provider"], p["voice_id"], float(p["voice_speed"]))
@@ -758,6 +764,11 @@ def _case(c: Ctx) -> dict:
 
 def stage_assemble(c: Ctx) -> None:
     scenes = c.scenes()
+    spoken = sum(float(s["audio_duration_sec"] or 0) for s in scenes)
+    if spoken < 0.4 * 60 * float(c.project["target_minutes"]) and not c.fx:
+        raise agents.BusinessRuleViolation(
+            f"the narration audio is only {spoken:.0f} s for a {c.project['target_minutes']}-minute video; "
+            "re-render so the script and voice are made again")
     missing = [s for s in scenes if s.get("graphics") is None and s["narration"].strip()]
     if missing:  # projects scripted before motion graphics existed get them now
         claims = db.q("select * from research_claims where project_id=%s order by claim", (c.pid,))

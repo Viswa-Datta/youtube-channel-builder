@@ -12,7 +12,9 @@ export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: st
   const { sb } = await apiUser();
   const p = await owned<{ id: string; status: string; target_minutes: number }>(sb, "projects", id);
   const b = await body(req, Req);
-  if (p.status === "rendering") throw new HttpError(409, "This video is being made right now. Cancel it first, then change the length.");
+  const { count: active } = await sb.from("renders").select("id", { count: "exact", head: true }).eq("project_id", id)
+    .in("status", ["queued", "running", "waiting_user", "paused_cap"]);
+  if (p.status === "rendering" || active) throw new HttpError(409, "This video is being made right now. Cancel it first, then change the length.");
   if (b.target_minutes === p.target_minutes) return NextResponse.json({ ok: true });
   const admin = supabaseAdmin();
   const { error } = await admin.from("projects").update({ target_minutes: b.target_minutes, approved_at: null }).eq("id", id);
