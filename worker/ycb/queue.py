@@ -29,7 +29,9 @@ def enqueue(*, user_id: str, kind: str, payload: dict | None = None, project_id:
     return row
 
 
-def claim(kinds: list[str] | None = None) -> dict | None:
+def claim(kinds: list[str] | None = None, lane: str | None = None) -> dict | None:
+    if lane:
+        return db.q1("select * from claim_job_lane(%s::text, %s::int, %s::text)", (settings.worker_id, settings.lease_seconds, lane))
     return db.q1("select * from claim_job(%s::text, %s::int, %s::text[])", (settings.worker_id, settings.lease_seconds, kinds))
 
 

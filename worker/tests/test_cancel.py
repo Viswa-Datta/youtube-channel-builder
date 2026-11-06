@@ -27,3 +27,13 @@ def test_cancelled_job_is_not_retried_or_completed(user):
     queue.complete(str(j["id"]))
     row = db.q1("select status, locked_by from jobs where id=%s", (j["id"],))
     assert row["status"] == "cancelled" and row["locked_by"] is None
+
+
+def test_lanes_split_voice_from_everything_else(user):
+    """The voice lane only takes voice recording; the main lane never does, so short steps never wait behind it."""
+    v = db.q1("""insert into jobs (user_id, kind, stage, priority) values (%s, 'render_stage', 'voice', 1) returning id""", (user,))["id"]
+    o = db.q1("""insert into jobs (user_id, kind, stage, priority) values (%s, 'render_stage', 'assemble', 2) returning id""", (user,))["id"]
+    main_job = queue.claim(lane="main")
+    voice_job = queue.claim(lane="voice")
+    assert main_job["id"] == o and voice_job["id"] == v
+    assert queue.claim(lane="voice") is None

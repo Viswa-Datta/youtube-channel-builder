@@ -67,11 +67,11 @@ def _on_render_failure(job: dict, msg: str, final: bool) -> None:
             db.x("update projects set status='failed' where id=%s", (job["project_id"],))
 
 
-def run_one(kinds: list[str] | None = None) -> bool:
-    job = queue.claim(kinds)
+def run_one(kinds: list[str] | None = None, lane: str | None = None) -> bool:
+    job = queue.claim(kinds, lane)
     if not job:
         return False
-    print(f"[{settings.worker_id}] claimed {job['kind']}:{job.get('stage') or ''} {job['id']} attempt {job['attempts']}", flush=True)
+    print(f"[{settings.worker_id}{'/' + lane if lane else ''}] claimed {job['kind']}:{job.get('stage') or ''} {job['id']} attempt {job['attempts']}", flush=True)
     with queue.Heartbeat(str(job["id"])) as hb:
         try:
             dispatch(job, hb)
@@ -99,14 +99,11 @@ def run_one(kinds: list[str] | None = None) -> bool:
     return True
 
 
-def worker() -> None:
-    signal.signal(signal.SIGTERM, _sig)
-    signal.signal(signal.SIGINT, _sig)
-    print(f"worker {settings.worker_id} polling {settings.database_url.split('@')[-1]}", flush=True)
+def _loop(lane: str | None) -> None:
     backoff = 5
     while not _stop:
         try:
-            if not run_one():
+            if not run_one(lane=lane):
                 time.sleep(settings.poll_seconds)
             backoff = 5
         except Exception as e:  # noqa: BLE001 — database unreachable etc.: wait and retry, never crash-loop
@@ -121,6 +118,19 @@ def worker() -> None:
             db._local.conn = None
             time.sleep(backoff)
             backoff = min(backoff * 2, 120)
+
+
+def worker() -> None:
+    """Two lanes in one machine: 'voice' records narration (hours of CPU), 'main' does everything else, so research,
+    footage downloads and video assembly of other videos keep moving while a voice is being recorded."""
+    import threading
+    signal.signal(signal.SIGTERM, _sig)
+    signal.signal(signal.SIGINT, _sig)
+    print(f"worker {settings.worker_id} polling {settings.database_url.split('@')[-1]} (lanes: main + voice)", flush=True)
+    t = threading.Thread(target=_loop, args=("voice",), daemon=True, name="voice-lane")
+    t.start()
+    _loop("main")
+    t.join(timeout=30)
 
 
 def check_env() -> dict:
