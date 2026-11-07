@@ -25,7 +25,7 @@ from ..storage import project_key, store
 
 STAGES = ["script", "voice", "footage", "blur", "assemble", "package"]
 WEIGHT = {"script": 10, "voice": 35, "footage": 5, "blur": 10, "assemble": 35, "package": 5}
-CARD_STYLE_VERSION = "motion-v2"
+CARD_STYLE_VERSION = "motion-v3"
 
 
 def sha(*parts) -> str:
@@ -297,7 +297,7 @@ def stage_footage(c: Ctx) -> str | None:
     return "wait" if waiting else None
 
 
-AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 4, 10, 3
+AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 4, 10, 1
 
 
 def _insert_free_asset(c: Ctx, s: dict, e, q: str) -> str:
@@ -371,12 +371,16 @@ def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_use
                  clip_uses.__setitem__(sh["asset_id"], clip_uses.get(sh["asset_id"], 0) + 1))
         return sum(1 for sh in s["shots"] if sh.get("asset_id"))
     beats = agents.make_beats(sents)
-    rows = db.q("""select id, kind, title from assets where scene_id=%s and selected and kind in ('clip','image')
+    rows = db.q("""select id, kind, title, tier from assets where scene_id=%s and selected and kind in ('clip','image')
                    and tier in ('real','news_document','stock_broll') order by created_at""", (s["id"],))
     items = [{"id": f"A{i + 1}", "kind": "photo" if r["kind"] == "image" else "clip", "title": r["title"] or "", "row": r}
              for i, r in enumerate(rows) if not (r["kind"] == "image" and str(r["id"]) in used_photos)]
     gen = gen if gen is not None else {"off": True, "images": 0, "videos": 0}
-    per_img = 0 if gen.get("off") else min(gen["images"], 3)
+    # AI scenes go where real pictures are scarce: up to 3 per scene normally, up to 6 when under half the beats
+    # can be covered by the scene's real photos and clips.
+    real_items = sum(1 for it in items if it["row"].get("tier", "real") != "stock_broll")
+    want_ai = 6 if real_items < len(beats) / 2 else 3
+    per_img = 0 if gen.get("off") else min(gen["images"], want_ai)
     per_vid = 0 if gen.get("off") or settings.gen_media != "mixed" else min(gen["videos"], 1)
     plan = agents.plan_shots(c.project, s, beats, items, c.prov, c.model, c.fx, c.uid, c.rid, per_img, per_vid)
     made_img = made_vid = 0
@@ -484,8 +488,9 @@ def stage_footage_auto(c: Ctx) -> None:
                 nv += video
                 ni += not video
         # generic B-roll from free stock libraries (only if keys are set) when real footage is thin
+        # Only for the Visual Director's specific B-roll requests (never the chapter title, which matched random clips).
         if nv < 3 and nst < AUTO_MAX_STOCK:
-            for n in [n for n in needs if n["tier"] == "stock_broll"] or [{"search_query": s["title"], "tier": "stock_broll"}]:
+            for n in [n for n in needs if n["tier"] == "stock_broll"]:
                 for cand in sources.search_scene(dict(n))[:AUTO_MAX_STOCK - nst]:
                     if cand.source_url in used or not cand.media_url:
                         continue
@@ -688,6 +693,8 @@ def stage_blur(c: Ctx) -> None:
 # ------------------------------------------------------------------ stage: assemble
 ANIM_SECONDS = {"route": 9.0, "place": 7.0, "counter": 5.5, "bars": 8.0, "timeline": 9.0, "points": 8.0, "quote": 7.0}
 MOVES = ["in", "right", "out", "left", "up"]
+PHOTO_HOLD = 5.5  # seconds a still stays on screen
+PHOTO_GAP = 45.0  # a photo is not shown again within this many seconds
 
 
 def _niche(c: Ctx) -> str:
@@ -743,6 +750,8 @@ def _anim_maker(kind: str, g: dict, bg_args: dict, accent):
             return anim.points(out, g.get("title", "")[:48], g["items"], secs, accent, bg=bg)
         if kind == "quote":
             return anim.quote(out, g["text"], g.get("title", "")[:40], secs, accent, bg=bg)
+        if kind == "collage":
+            return anim.collage(out, [Path(x) for x in g["photos"]], secs, accent, bg=bg)
         if kind == "framed":
             return anim.framed_photo(out, Path(g["photo"]), secs, "", accent, tilt=g.get("tilt", -3.0), bg=bg)
         raise ValueError(kind)
@@ -825,12 +834,15 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         if a_out - a_in < 3:  # in/out points beyond the part that was downloaded: use the whole downloaded piece
             a_in, a_out = 0.0, src
         media[str(a["id"])] = {"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, a_out), "pos": a_in,
-                               "cap": 12.0 if a["tier"] == "real" else 8.0, "uses": 0, "ai": a["tier"] == "generated"}
+                               "cap": 12.0 if a["tier"] == "real" else 8.0, "uses": 0, "ai": a["tier"] == "generated",
+                               "stock": a["tier"] == "stock_broll", "last": -1e9}
     for i, (a, p) in enumerate(zip(photos, photo_paths)):
-        media[str(a["id"])] = {"kind": "photo", "path": p, "n": i, "uses": 0, "ai": a["tier"] == "generated"}
+        media[str(a["id"])] = {"kind": "photo", "path": p, "n": i, "uses": 0, "ai": a["tier"] == "generated", "last": -1e9}
     shots = [x for x in (s.get("shots") or []) if s.get("shots_hash") == s["narration_hash"]]
     planned_ids = {x["asset_id"] for x in shots if x.get("asset_id")}
-    pool = [m for k, m in media.items() if k not in planned_ids] or list(media.values())
+    # Unplanned gaps never use generic stock clips: they appear only where the Shot List Agent picked them for a beat.
+    pool = [m for k, m in media.items() if k not in planned_ids and not m.get("stock")] or \
+        [m for m in media.values() if not m.get("stock")] or list(media.values())
     labelled: set[int] = set()
     uses = [0]
     fallback_sents = [x for x in sents if 8 <= len(x["text"].split()) <= 30]
@@ -844,16 +856,20 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
                 break
         return cur
 
-    def pool_pick():
-        if not pool:
+    def pool_pick(t: float):
+        """Least-used media that may be shown now: a photo at most twice per scene and never again within
+        PHOTO_GAP seconds; clips may return (a different part of the clip is shown)."""
+        ok = [m for m in pool if m["kind"] == "clip" and m["uses"] < 4 or
+              m["kind"] == "photo" and m["uses"] < 2 and t - m["last"] >= PHOTO_GAP]
+        if not ok:
             return None
-        m = min(pool, key=lambda m: (m["uses"], m.get("n", 0)))
-        return m
+        return min(ok, key=lambda m: (m["uses"], m["last"], m.get("n", 0)))
 
-    def media_seg(m: dict, take: float, label: str) -> compose.Segment:
+    def media_seg(m: dict, take: float, label: str, t: float) -> compose.Segment:
         if m.get("ai") and "llustration" not in label:
             label = "AI illustration"  # generated scenes are always marked on screen
         m["uses"] += 1
+        m["last"] = t
         uses[0] += 1
         if m["kind"] == "clip":
             take = min(take, m["cap"])
@@ -862,10 +878,41 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
             seg = compose.Segment("clip", m["path"], take, in_sec=m["pos"], label=label)
             m["pos"] += take
             return seg
-        take = min(take, 9.0)
-        if not label and not m.get("ai") and uses[0] % 6 == 4 and take >= 5:  # now and then: a framed print
+        take = min(take, PHOTO_HOLD)
+        if not label and not m.get("ai") and uses[0] % 6 == 4 and take >= 4:  # now and then: a framed print
             return anim_seg("framed", {"photo": str(m["path"]), "tilt": -3.0 if m["n"] % 2 else 2.5}, take)
         return compose.Segment("image", m["path"], take, pan=MOVES[(m["n"] + m["uses"]) % len(MOVES)], photo=True, label=label)
+
+    alt = {"k": 0, "collage_at": -1e9, "map": 0}
+    real_photos = [m for m in media.values() if m["kind"] == "photo"]
+
+    def alternative(t: float, take: float) -> compose.Segment:
+        """Out of fresh pictures: rather than repeating a photo, show something new - a collage of the scene's
+        pictures, a satellite flyover of the place, or the line being spoken, animated."""
+        opts = []
+        if len(real_photos) >= 2 and t - alt["collage_at"] >= 30:
+            opts.append("collage")
+        if latlon and alt["map"] < 1:
+            opts.append("place")
+        opts.append("quote")
+        kind = opts[alt["k"] % len(opts)]
+        alt["k"] += 1
+        uses[0] += 1
+        if kind == "collage":
+            alt["collage_at"] = t
+            k0 = alt["k"]
+            ph = [str(real_photos[(k0 + j) % len(real_photos)]["path"]) for j in range(min(3, len(real_photos)))]
+            return anim_seg("collage", {"photos": ph}, min(6.0, take))
+        if kind == "place":
+            alt["map"] += 1
+            return anim_seg("place", {"lat": latlon[0], "lon": latlon[1],
+                                      "place_label": (_case(c).get("case_name") or latlon[2]).split(",")[0][:34],
+                                      "title": latlon[2][:40]}, min(7.0, take))
+        x = next((x for x in fallback_sents if float(x["start"]) >= t - 1), None) or \
+            (fallback_sents[uses[0] % len(fallback_sents)] if fallback_sents else None)
+        if x:
+            return anim_seg("quote", {"text": x["text"], "title": s["chapter_title"] or ""}, min(7.0, take))
+        return anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"]}, min(7.0, take))
 
     def fill(t0: float, t1: float, segs: list) -> None:
         t = t0
@@ -877,32 +924,20 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
             k = shot_at(t)
             sh = shots[k] if k is not None else None
             m = media.get(sh["asset_id"]) if sh and sh.get("asset_id") else None
-            if m is not None and m["kind"] == "photo" and m["uses"] > 0 and sh and t > sh["start"] + 9:
-                m = None  # a long beat: after one photo, continue with another picture
+            if m is not None and m["kind"] == "photo" and m["uses"] > 0:
+                m = None  # the beat's photo was already shown: continue with another picture
             if m is not None:
                 end = shots[k + 1]["start"] if k + 1 < len(shots) else t1
                 take = max(2.5, min(left, end - t))
             else:
-                m = pool_pick()
-                take = min(7.0, left)
+                m = pool_pick(t)
+                take = min(PHOTO_HOLD, left)
             label = ""
             if sh and k not in labelled and sh.get("label") and m is not None:
                 label, _ = sh["label"], labelled.add(k)
-            if m is not None:
-                seg = media_seg(m, take, label)
-                segs.append(seg)
-                t += seg.duration
-                continue
-            # no footage at all for this scene: the key line being spoken, animated over a changing backdrop
-            x = next((x for x in fallback_sents if float(x["start"]) >= t - 1), None) or \
-                (fallback_sents[uses[0] % len(fallback_sents)] if fallback_sents else None)
-            uses[0] += 1
-            take = min(8.0, left)
-            if x:
-                segs.append(anim_seg("quote", {"text": x["text"], "title": s["chapter_title"] or ""}, take))
-            else:
-                segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"]}, take))
-            t += take
+            seg = media_seg(m, take, label, t) if m is not None else alternative(t, left)
+            segs.append(seg)
+            t += seg.duration
 
     segs: list[compose.Segment] = []
     segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"],

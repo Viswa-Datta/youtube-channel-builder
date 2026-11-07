@@ -66,17 +66,20 @@ def prepare_still(src: Path, out: Path) -> Path:
 
 
 def _move_filter(move: str, d: float) -> str:
-    """Slow camera move over a STILL_W x STILL_H still, output W x H. Zooms use per-frame scaling (smooth, no jitter)."""
+    """Camera move over a STILL_W x STILL_H still, output W x H: a clear push in/out, or a pan that also pushes in a
+    little (never a static drift). Zooms use per-frame scaling (smooth, no jitter)."""
     p = f"(t/{d:.3f})"
     ease = f"(0.5-0.5*cos(PI*{p}))"  # ease in/out
     if move in ("in", "out"):
-        z = f"(1+0.18*{ease})" if move == "in" else f"(1.18-0.18*{ease})"
+        z = f"(1+0.32*{ease})" if move == "in" else f"(1.32-0.32*{ease})"
         return (f"scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame:flags=bicubic,"
                 f"crop={W}:{H}:'(iw-{W})/2':'(ih-{H})/2'")
+    z = f"(1+0.12*{ease})"
+    scale = f"scale=w='trunc({STILL_W}*{z}/2)*2':h='trunc({STILL_H}*{z}/2)*2':eval=frame:flags=bicubic"
     if move == "up":
-        return f"scale={STILL_W}:{STILL_H},crop={W}:{H}:'(iw-ow)/2':'(ih-oh)*(1-{ease})'"
+        return f"{scale},crop={W}:{H}:'(iw-ow)/2':'(ih-oh)*(1-{ease})'"
     x = f"(iw-ow)*{ease}" if move == "right" else f"(iw-ow)*(1-{ease})"
-    return f"scale={STILL_W}:{STILL_H},crop={W}:{H}:'{x}':'(ih-oh)/2'"
+    return f"{scale},crop={W}:{H}:'{x}':'(ih-oh)*(0.35+0.3*{ease})'"
 
 
 def label_png(text: str, out: Path) -> Path:

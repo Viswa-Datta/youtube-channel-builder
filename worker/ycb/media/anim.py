@@ -766,3 +766,42 @@ def end_card(out: Path, channel: str, topic: str, seconds: float = END_CARD_SECO
         bg.finish(ImageDraw.Draw(img))
         fr.put(img)
     return fr.close()
+
+
+def collage(out: Path, photos: list[Path], seconds: float = 6.0, accent=ACC, bg: Backdrop | None = None) -> Path:
+    """2-3 photos fly in as prints and settle in a fanned layout over a soft backdrop, with a slow push-in: a fresh
+    look when a scene has few pictures, so the same photo never just drifts on screen twice."""
+    photos = [p for p in photos if p][:3]
+    if not photos:
+        raise ValueError("no photos")
+    bg = bg or Backdrop("photo", accent, photo=photos[0], seed=len(photos))
+    prints = []
+    for k, p in enumerate(photos):
+        im = Image.open(p).convert("RGB")
+        im.thumbnail((760, 520))
+        card = Image.new("RGB", (im.width + 24, im.height + 24), (245, 243, 238))
+        card.paste(im, (12, 12))
+        prints.append(card.convert("RGBA"))
+    n = len(prints)
+    slots = {1: [(0.5, 0.52, -2)], 2: [(0.33, 0.5, -5), (0.67, 0.54, 4)],
+             3: [(0.24, 0.5, -7), (0.5, 0.56, 2), (0.76, 0.5, 7)]}[n]
+    fr = Frames(out, seconds)
+    for i in range(fr.n):
+        t = i / FPS
+        img = bg.frame(t, seconds)
+        z = 1.0 + 0.06 * ease(t / seconds)
+        for k, (card, (sx, sy, rot)) in enumerate(zip(prints, slots)):
+            p = ease_out((t - 0.15 - k * 0.35) / 0.6)
+            if p <= 0:
+                continue
+            c = card.rotate(rot * p, resample=Image.BICUBIC, expand=True)
+            c = c.resize((int(c.width * z), int(c.height * z)))
+            x = int(sx * W - c.width / 2 + (1 - p) * (W * 0.6 if k % 2 else -W * 0.6))
+            y = int(sy * H - c.height / 2 + (1 - p) * 120)
+            shadow = Image.new("RGBA", c.size, (0, 0, 0, 0))
+            shadow.putalpha(c.split()[-1].point(lambda a: int(a * 0.45)))
+            img.paste(Image.new("RGB", c.size, (0, 0, 0)), (x + 14, y + 18), shadow.split()[-1])
+            img.paste(c, (x, y), c)
+        bg.finish(ImageDraw.Draw(img))
+        fr.put(img)
+    return fr.close()

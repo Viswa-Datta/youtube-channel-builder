@@ -165,11 +165,19 @@ def pixabay(query: str, rows: int = 8) -> list[Candidate]:
                      params={"key": settings.pixabay_api_key, "q": query, "per_page": max(3, rows), "safesearch": "true"})
     r.raise_for_status()
     out = []
+    stop = {"the", "a", "an", "of", "and", "in", "on", "at", "to", "for", "with", "from", "by", "new", "old", "view", "scene"}
+    want = {w for w in re.findall(r"[a-z]+", query.lower()) if len(w) > 2 and w not in stop}
     for v in r.json().get("hits", []):
         vid = v["videos"].get("large") or v["videos"].get("medium")
         if not vid or not vid.get("url"):
             continue
-        out.append(Candidate("stock_broll", f"Pixabay video {v['id']}", "Pixabay", v["pageURL"], vid["url"],
+        tags = (v.get("tags") or "").lower()
+        tagw = set(re.findall(r"[a-z]+", tags))
+        # Pixabay returns loosely related clips (a hospital for "vision"): keep only clips whose tags share at least
+        # half of the query's words, so the picture matches what the narration is about.
+        if want and len(want & tagw) < max(1, (len(want) + 1) // 2):
+            continue
+        out.append(Candidate("stock_broll", f"Pixabay stock clip: {tags[:120]}", "Pixabay", v["pageURL"], vid["url"],
                              agency=v.get("user"), license="Licensed",
                              rights_note="Pixabay Content License; B-roll only.", duration=v.get("duration"),
                              width=vid.get("width"), height=vid.get("height")))

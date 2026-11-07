@@ -42,7 +42,7 @@ class Settings:
     gemini_api_key: str | None = field(default_factory=lambda: _env("GEMINI_API_KEY"))
     # AI illustrations (needs the Gemini API paid tier): off | images | mixed (images + a few short video clips)
     gen_media: str = field(default_factory=lambda: (_env("GEN_MEDIA", "mixed") or "mixed").lower())
-    gen_images_max: int = field(default_factory=lambda: int(_env("GEN_IMAGES_MAX", "20")))
+    gen_images_max: int = field(default_factory=lambda: int(_env("GEN_IMAGES_MAX", "36")))
     gen_videos_max: int = field(default_factory=lambda: int(_env("GEN_VIDEOS_MAX", "6")))
     gen_video_seconds: int = field(default_factory=lambda: int(_env("GEN_VIDEO_SECONDS", "6")))
     ollama_url: str | None = field(default_factory=lambda: _env("OLLAMA_URL"))
