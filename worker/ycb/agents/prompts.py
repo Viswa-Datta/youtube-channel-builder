@@ -28,6 +28,17 @@ apply, public_footage (kinds of freely licensed media likely to exist: e.g. "NAS
 (e.g. "Burj Khalifa construction", "Panama Canal locks"). The app checks every subject against Wikipedia, measures real
 popularity from Wikipedia page views, and counts the freely licensed media it can download; ideas it cannot confirm
 are dropped, so never invent a subject, name, place or date. Every idea must be a DIFFERENT subject.
+WHAT MAKES A GOOD IDEA (this is a story channel, not an encyclopedia):
+- Every idea is a STORY with tension, not a subject summary. Pick the strongest true angle for that subject, e.g.
+  a failure or disaster and what it changed; a race or rivalry; an "impossible" problem and the clever solution; the
+  human cost or a hidden story; a record and how it was achieved; a project that went wildly over budget or late;
+  something under construction right now; why it was built the strange way it was.
+- Titles like big documentary channels: subject name + a curiosity hook or a striking true number, under 70 chars,
+  e.g. "How New York Built the Empire State Building in 410 Days", "The Bridge That Tore Itself Apart",
+  "Why Japan Built a Tunnel Under the Sea". No vague taglines ("Bridging the Clouds", "Taming the River").
+- Variety: at most a third should be world-famous icons; the rest are well-documented but less over-covered
+  subjects with strong stories. Spread across categories and eras (and countries) - never a list of the same kind.
+- Never propose anything from the "Already covered" list, even under another name or angle.
 Do not invent facts in the hook; phrase uncertain details as questions. {STYLE_GUARD}
 Return 20-30 ideas. Return JSON only."""
 

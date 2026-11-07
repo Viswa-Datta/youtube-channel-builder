@@ -101,14 +101,15 @@ def ideas(job: dict) -> dict:
     tier = p.get("tier", "standard")
     prov, model, fx = llm_choice(p, tier)
     ledger.ensure_within_cap(job["user_id"], pricing.estimate("ideas", tier)["total_usd"], "Ideas Agent")
-    existing = [r["title"] for r in db.q("select title from ideas where channel_id=%s", (ch["id"],))] + \
-        [f"case: {r['c']}" for r in db.q("select distinct case_info->>'case_name' c from ideas where channel_id=%s and case_info ? 'case_name'", (ch["id"],))]
+    # Every subject this channel has ever been offered (picked, published or dismissed): never suggest them again.
+    existing = [r["c"] for r in db.q("""select distinct case_info->>'case_name' c from ideas
+                                        where channel_id=%s and case_info ? 'case_name'""", (ch["id"],)) if r["c"]]
     from .niches import preset_for
     pre = preset_for(ch["niche"], ch["sub_niche"])
     user = (f"Channel: {json.dumps((kit or {}).get('selected') or {})}\nNiche: {ch['niche']} / {ch['sub_niche'] or ''}\n"
             f"Subjects for this niche: {pre['subjects']}.\nGuidance: {pre['ideas']}\nSafety: {pre['safety']}\n"
             f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
-            f"Already have (do not repeat): {json.dumps(existing[:80])}")
+            f"Already covered (never suggest these subjects again): {json.dumps(existing[:400])}")
     if fx:
         batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
                                  user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
@@ -116,14 +117,22 @@ def ideas(job: dict) -> dict:
         from ..schemas import IdeaPart
         want = int(p.get("count", 25))
         got: list = []
-        for part in range(2):
-            n = want // 2 + (want % 2 if part == 0 else 0)
+        taken = {e.strip().lower() for e in existing}
+        part = 0
+        # Up to 4 rounds: repeats of covered subjects are thrown away, so ask again until there are enough new ones.
+        while len(got) < want and part < 4:
+            n = min(13, want - len(got))
             ask = user.replace(f"Count: {want}", f"Count: {n} (return exactly {n} ideas)")
             if got:
                 ask += "\nAlso already proposed in this batch (different subjects only): " + json.dumps([i.case_name or i.title for i in got])
             half, _ = complete_json(out=IdeaPart, agent="ideas", provider=prov, model=model, system=prompts.IDEAS.replace("Return 20-30 ideas.", f"Return {n} ideas."),
                                     user=ask, user_id=job["user_id"], idem=f"job:{job['id']}:ideas:{part}")
-            got += half.ideas
+            for i in half.ideas:
+                k = (i.case_name or i.title or "").strip().lower()
+                if k and k not in taken:
+                    taken.add(k)
+                    got.append(i)
+            part += 1
             hb_note(job, f"ideas written: {len(got)}/{want}")
         batch = IdeaBatch.model_construct(ideas=got)
     est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
