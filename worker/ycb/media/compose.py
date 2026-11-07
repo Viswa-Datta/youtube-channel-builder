@@ -26,6 +26,7 @@ class Segment:
     pan: str = "right"  # image move: in | out | left | right | up
     photo: bool = False  # a real photograph (gets framing + grade); generated cards are drawn at the right size
     make: Callable[[Path, float], Path] | None = None  # kind "anim": renders the animation at the exact length
+    label: str = ""     # short factual on-screen label (place / date / object), shown lower-left for a few seconds
 
 
 XFADE = 0.6  # crossfade between shots inside a scene (seconds)
@@ -78,6 +79,33 @@ def _move_filter(move: str, d: float) -> str:
     return f"scale={STILL_W}:{STILL_H},crop={W}:{H}:'{x}':'(ih-oh)/2'"
 
 
+def label_png(text: str, out: Path) -> Path:
+    """Documentary-style lower-left label: accent bar + text on a soft dark plate (transparent PNG, full frame)."""
+    from PIL import Image, ImageDraw
+    from .cards import SANS_B, font
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    f = font(SANS_B, 44)
+    t = text.strip().upper()
+    tw = d.textlength(t, font=f)
+    x, y = 90, H - 190
+    d.rounded_rectangle([x - 6, y - 18, x + tw + 64, y + 66], radius=10, fill=(0, 0, 0, 150))
+    d.rectangle([x + 10, y - 2, x + 18, y + 50], fill=(255, 205, 40, 255))
+    d.text((x + 38, y + 24), t, font=f, fill=(255, 255, 255, 255), anchor="lm")
+    img.save(out)
+    return out
+
+
+def _label_args(seg: Segment, out: Path) -> tuple[list[str], str]:
+    """Extra input + overlay filter for the segment's label (visible from 0.6 s to at most 6 s, fading)."""
+    if not seg.label:
+        return [], ""
+    png = label_png(seg.label, out.with_suffix(".label.png"))
+    end = max(1.6, min(seg.duration - 0.6, 6.0))
+    fade = (f"[1:v]format=rgba,fade=t=in:st=0.6:d=0.4:alpha=1,fade=t=out:st={end - 0.4:.2f}:d=0.4:alpha=1[lab];")
+    return ["-loop", "1", "-t", f"{seg.duration:.3f}", "-i", str(png)], fade
+
+
 def segment_to_video(seg: Segment, out: Path) -> Path:
     tmp = out.with_suffix(".part.mp4")
     d = f"{seg.duration:.3f}"
@@ -90,13 +118,23 @@ def segment_to_video(seg: Segment, out: Path) -> Path:
         if seg.photo:
             src = prepare_still(seg.path, out.with_suffix(".still.jpg"))
         vf = f"{_move_filter(seg.pan, seg.duration)},setsar=1,format=yuv420p"
-        run(["-loop", "1", "-framerate", str(FPS), "-t", d, "-i", str(src), "-vf", vf, *ENC, "-an", "-t", d, str(tmp)])
+        extra, lab = _label_args(seg, out)
+        if lab:
+            fc = f"[0:v]{vf}[v];{lab}[v][lab]overlay=0:0:shortest=1,format=yuv420p"
+            run(["-loop", "1", "-framerate", str(FPS), "-t", d, "-i", str(src), *extra, "-filter_complex", fc,
+                 *ENC, "-an", "-t", d, str(tmp)])
+        else:
+            run(["-loop", "1", "-framerate", str(FPS), "-t", d, "-i", str(src), "-vf", vf, *ENC, "-an", "-t", d, str(tmp)])
     else:
         # clips: fill the frame (crop the edges) when the aspect is close to 16:9, otherwise blurred side fill
         vf = (f"split[a][b];[b]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=30:2,eq=brightness=-0.12[bg];"
               f"[a]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,"
               f"setsar=1,fps={FPS},format=yuv420p")
-        run(["-stream_loop", "-1", "-ss", f"{seg.in_sec:.3f}", "-i", str(seg.path), "-t", d, "-filter_complex", vf, *ENC, "-an", str(tmp)])
+        extra, lab = _label_args(seg, out)
+        if lab:
+            vf = f"[0:v]{vf}[v];{lab}[v][lab]overlay=0:0:shortest=1,format=yuv420p"
+        run(["-stream_loop", "-1", "-ss", f"{seg.in_sec:.3f}", "-i", str(seg.path), *extra, "-t", d, "-filter_complex", vf,
+             *ENC, "-an", str(tmp)])
     tmp.replace(out)
     return out
 
@@ -150,7 +188,7 @@ def scene_video(segments: list[Segment], work: Path, out: Path) -> Path:
     parts, durs = [], []
     for i, s in enumerate(segments):
         extra = XFADE if i < len(segments) - 1 else 0.0
-        seg = Segment(s.kind, s.path, s.duration + extra, s.in_sec, s.pan, s.photo, s.make)
+        seg = Segment(s.kind, s.path, s.duration + extra, s.in_sec, s.pan, s.photo, s.make, s.label)
         p = work / f"seg-{i:03d}.mp4"
         segment_to_video(seg, p)
         parts.append(p)

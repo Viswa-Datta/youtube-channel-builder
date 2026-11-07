@@ -618,7 +618,7 @@ def plan_graphics(project: dict, scene: dict, claims: list[str], prov: str, mode
     if fx:
         return []  # fixture runs have no recorded motion plan
     words = len(scene["narration"].split())
-    want = max(2, min(9, round(words / 110)))  # ~1 animation per 40-45 s of narration
+    want = max(2, min(12, round(words / 80)))  # ~1 animation per 30 s of narration
     user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\nPlan about {want} animations.\n\n"
             f"NARRATION:\n{scene['narration']}\n\nRESEARCH CLAIMS:\n" + "\n".join(claims[:80]) + f"\n\nReturn idx={scene['idx']}.")
     try:
@@ -629,3 +629,54 @@ def plan_graphics(project: dict, scene: dict, claims: list[str], prov: str, mode
     except Exception:  # noqa: BLE001 - no animations is better than a failed video
         return []
     return verify_graphics(out.graphics, scene["narration"], claims)
+
+
+# ------------------------------------------------------------------ Shot List Agent
+def make_beats(sentences: list[dict], min_len: float = 4.5, max_len: float = 11.0) -> list[dict]:
+    """Group spoken sentences into beats of ~5-10 s (short sentences merged, very long ones split in two)."""
+    beats: list[dict] = []
+    cur = None
+    for x in sentences:
+        st, en, tx = float(x["start"]), float(x["end"]), x["text"]
+        if en - st > max_len:
+            if cur:
+                beats.append(cur)
+                cur = None
+            mid = (st + en) / 2
+            beats.append({"start": st, "end": mid, "text": tx})
+            beats.append({"start": mid, "end": en, "text": tx + " (continued)"})
+            continue
+        if cur is None:
+            cur = {"start": st, "end": en, "text": tx}
+        else:
+            cur["end"], cur["text"] = en, cur["text"] + " " + tx
+        if cur["end"] - cur["start"] >= min_len:
+            beats.append(cur)
+            cur = None
+    if cur:
+        if beats and cur["end"] - cur["start"] < 2.5:
+            beats[-1]["end"], beats[-1]["text"] = cur["end"], beats[-1]["text"] + " " + cur["text"]
+        else:
+            beats.append(cur)
+    for i, b in enumerate(beats):
+        b["beat"] = i
+    return beats
+
+
+def plan_shots(project: dict, scene: dict, beats: list[dict], items: list[dict], prov: str, model: str,
+               fx: str | None, user_id: str, render_id: str | None):
+    """items: [{'id': 'A1', 'kind': 'photo'|'clip', 'title': ...}]. Returns ShotPlan or None (fixture runs, failures)."""
+    from ..schemas import ShotPlan
+    if fx or not beats:
+        return None
+    listing = "\n".join(f"{it['id']} [{it['kind']}] {it['title'][:110]}" for it in items) or "(none yet)"
+    beat_txt = "\n".join(f"{b['beat']}: ({b['end'] - b['start']:.0f}s) {b['text']}" for b in beats)
+    user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\n\nBEATS:\n{beat_txt}\n\n"
+            f"AVAILABLE PHOTOS/CLIPS:\n{listing}\n\nReturn idx={scene['idx']} with {len(beats)} shots.")
+    try:
+        out, _ = complete_json(out=ShotPlan, agent="shot_list", provider=prov, model=model, system=prompts.SHOT_LIST,
+                               user=user, user_id=user_id, project_id=project["id"], render_id=render_id,
+                               idem=f"project:{project['id']}:shots:{scene['idx']}:{_h(beat_txt + listing)}", stage="footage")
+        return out
+    except Exception:  # noqa: BLE001 - without a plan the editor falls back to rotating the scene's media
+        return None

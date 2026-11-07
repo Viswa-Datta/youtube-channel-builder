@@ -117,3 +117,16 @@ Rules: use ONLY facts and numbers that appear in the narration or research claim
 never estimate a distance (the app computes distances itself). Spread animations through the scene, in narration
 order, at least 20 seconds of narration apart. Prefer place/route/counter/bars/timeline; use points and quote at
 most once each per scene. Return JSON only: {"idx": <scene idx>, "graphics": [...]}."""
+
+SHOT_LIST = """You are the Shot List Agent (picture editor) for a documentary. The narration of one scene is split into
+numbered beats (a few seconds each). For EVERY beat, choose what is on screen so the picture shows exactly what the
+narrator is saying at that moment, like a big documentary channel:
+- asset: the id of the listed photo/clip that best shows the thing named in that beat (the building, person, machine,
+  place, event, era). Each PHOTO may be used for ONE beat only; a CLIP for at most two beats. Never pick an item just
+  because it is available: if nothing listed matches the beat, leave asset empty and write a query instead.
+- query: when no listed item fits, a precise 2-5 word search for archive photos/footage of what the beat names
+  (e.g. "Panama Canal locks construction 1913", "Zarya module launch"). Concrete nouns, no adjectives.
+- label: optional short on-screen label (max 6 words) naming what/where/when is shown, ONLY using facts stated in the
+  beat (e.g. "Culebra Cut, 1913", "Zvezda Service Module"). Leave empty when the beat states no such fact.
+Return JSON only: {"idx": <scene idx>, "shots": [{"beat": n, "asset": "A3", "query": "", "label": ""}, ...]} with one
+entry per beat, in order."""

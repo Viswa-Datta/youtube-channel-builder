@@ -248,6 +248,24 @@ class SceneGraphics(BaseModel):
         return (v or [])[:12]
 
 
+# ------------------------------------------------------------------ Shot List Agent
+class Shot(BaseModel):
+    beat: int
+    asset: str = Field(default="", description="id of the listed photo/clip that shows what this beat says, or ''")
+    query: str = Field(default="", description="if no listed item fits: 2-5 word search for a photo/clip that would")
+    label: str = Field(default="", description="optional on-screen label, max 6 words, only facts said in the beat")
+
+    @field_validator("asset", "query", "label", mode="before")
+    @classmethod
+    def _s(cls, v):
+        return "" if v is None else str(v)[:120]
+
+
+class ShotPlan(BaseModel):
+    idx: int
+    shots: list[Shot] = Field(default_factory=list)
+
+
 # ------------------------------------------------------------------ Visual Director Agent
 class FootageNeed(BaseModel):
     scene_idx: int

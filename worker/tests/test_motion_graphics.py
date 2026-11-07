@@ -44,3 +44,12 @@ def test_anchor_time():
              {"text": "Crews added four and a half floors a week.", "start": 2.0, "end": 5.0}]
     assert _anchor_time("added four and a half floors a week", sents) == 2.0
     assert _anchor_time("something entirely different here", sents) is None
+
+
+def test_beats_group_short_and_split_long_sentences():
+    from ycb.agents.core import make_beats
+    s = [{"start": 0, "end": 2, "text": "A."}, {"start": 2, "end": 5, "text": "B."},
+         {"start": 5, "end": 19, "text": "Long C."}, {"start": 19, "end": 25, "text": "D."}]
+    b = make_beats(s)
+    assert [x["text"] for x in b] == ["A. B.", "Long C.", "Long C. (continued)", "D."]
+    assert b[0]["start"] == 0 and b[-1]["end"] == 25 and all(x["end"] > x["start"] for x in b)

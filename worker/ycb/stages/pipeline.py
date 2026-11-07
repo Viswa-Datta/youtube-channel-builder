@@ -25,7 +25,7 @@ from ..storage import project_key, store
 
 STAGES = ["script", "voice", "footage", "blur", "assemble", "package"]
 WEIGHT = {"script": 10, "voice": 35, "footage": 5, "blur": 10, "assemble": 35, "package": 5}
-CARD_STYLE_VERSION = "motion-v1"
+CARD_STYLE_VERSION = "motion-v2"
 
 
 def sha(*parts) -> str:
@@ -300,6 +300,80 @@ def stage_footage(c: Ctx) -> str | None:
 AUTO_MAX_VIDEOS, AUTO_MAX_IMAGES, AUTO_MAX_STOCK = 4, 10, 3
 
 
+def _insert_free_asset(c: Ctx, s: dict, e, q: str) -> str:
+    lic = "Public Domain" if e.license == "Public Domain" or "public" in (e.meta.get("license_short") or "").lower() \
+        or "cc0" in (e.meta.get("license_short") or "").lower() else "Licensed"
+    video = e.media_type == "video"
+    return db.q1("""insert into assets (project_id, scene_id, kind, tier, title, source_name, agency, release_date, source_url,
+            license, rights_notes, rights_checked, rights_checked_at, selected, meta)
+            values (%s,%s,%s,'real',%s,%s,%s,%s,%s,%s,%s,true,now(),true,%s) returning id""",
+                 (c.pid, s["id"], "clip" if video else "image", e.title[:300], e.source, (e.channel or e.source)[:200],
+                  _d(e.published), e.url, lic,
+                  f"Auto-checked from the source's licence metadata: {e.meta.get('license_short') or e.license}. {e.rights_note}"[:1900],
+                  db.jsonb({"media_url": e.media_url, "auto_rights": True, "search_query": q,
+                            **{k2: v for k2, v in e.meta.items() if k2 in ("license_short", "license_url", "nasa_manifest", "identifier",
+                                                                         "collection", "thumb_url")}})))["id"]
+
+
+SHOT_SEARCHES_PER_SCENE = 8
+
+
+def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_uses: dict) -> int:
+    """Sentence-level shot list: the Shot List Agent picks, for every beat of narration, the photo or clip that shows
+    what is being said, searches for a better one when nothing fits, and adds a short factual label. Photos are used
+    once per video, clips at most twice. Returns the number of beats that have a matching picture."""
+    from ..footage import discovery
+    sents = s.get("sentence_timings") or []
+    if not sents:
+        return 0
+    if s.get("shots") is not None and s.get("shots_hash") == s["narration_hash"]:
+        for sh in s["shots"]:
+            if sh.get("asset_id"):
+                (used_photos.add(sh["asset_id"]) if sh.get("kind") == "image" else
+                 clip_uses.__setitem__(sh["asset_id"], clip_uses.get(sh["asset_id"], 0) + 1))
+        return sum(1 for sh in s["shots"] if sh.get("asset_id"))
+    beats = agents.make_beats(sents)
+    rows = db.q("""select id, kind, title from assets where scene_id=%s and selected and kind in ('clip','image')
+                   and tier in ('real','news_document','stock_broll') order by created_at""", (s["id"],))
+    items = [{"id": f"A{i + 1}", "kind": "photo" if r["kind"] == "image" else "clip", "title": r["title"] or "", "row": r}
+             for i, r in enumerate(rows) if not (r["kind"] == "image" and str(r["id"]) in used_photos)]
+    plan = agents.plan_shots(c.project, s, beats, items, c.prov, c.model, c.fx, c.uid, c.rid)
+    by_id = {it["id"]: it["row"] for it in items}
+    case = _case(c)
+    subj_words = discovery._words(case.get("case_name") or c.project["title"])
+    shots, searches = [], 0
+    for b in beats:
+        sh = next((x for x in (plan.shots if plan else []) if x.beat == b["beat"]), None)
+        row = by_id.get(sh.asset) if sh and sh.asset else None
+        if row and ((row["kind"] == "image" and str(row["id"]) in used_photos) or
+                    (row["kind"] == "clip" and clip_uses.get(str(row["id"]), 0) >= 2)):
+            row = None
+        if row is None and sh and sh.query and searches < SHOT_SEARCHES_PER_SCENE:
+            searches += 1
+            q = sh.query
+            try:
+                found = discovery.free_media(q, 6, discovery._words(q) & subj_words or discovery._words(q))
+            except Exception:  # noqa: BLE001
+                found = []
+            for e in found:
+                if e.url in used_urls:
+                    continue
+                aid = _insert_free_asset(c, s, e, q)
+                used_urls.add(e.url)
+                row = {"id": aid, "kind": "clip" if e.media_type == "video" else "image", "title": e.title}
+                break
+        if row is not None:
+            if row["kind"] == "image":
+                used_photos.add(str(row["id"]))
+            else:
+                clip_uses[str(row["id"])] = clip_uses.get(str(row["id"]), 0) + 1
+        shots.append({"start": round(b["start"], 2), "end": round(b["end"], 2),
+                      "asset_id": str(row["id"]) if row else None, "kind": row["kind"] if row else None,
+                      "label": (sh.label if sh else "")[:48]})
+    db.x("update scenes set shots=%s, shots_hash=%s where id=%s", (db.jsonb(shots), s["narration_hash"], s["id"]))
+    return sum(1 for x in shots if x["asset_id"])
+
+
 def stage_footage_auto(c: Ctx) -> None:
     """Fully automatic footage: only media whose licence the source itself publishes as public domain, CC0 or CC BY
     (or free stock licences) is fetched and placed, each with source, author and licence logged for the credits.
@@ -376,7 +450,13 @@ def stage_footage_auto(c: Ctx) -> None:
         db.x("""insert into assets (project_id, scene_id, kind, tier, title, source_name, license, selected, rights_notes)
                 values (%s,%s,'card','generated',%s,'YouTube Channel Builder','Licensed',true,'Made by the app for this video')""",
              (c.pid, s["id"], f"Maps, timeline, chart and document graphics, scene {s['idx']}"))
-        c.progress("footage", (k + 1) / len(scenes), f"scene {s['idx']}: {nv} videos, {ni} photos, {nst} B-roll")
+        c.progress("footage", 0.6 * (k + 1) / len(scenes), f"scene {s['idx']}: {nv} videos, {ni} photos, {nst} B-roll")
+    # Picture edit: match a picture to every sentence (searches more where nothing fits).
+    used_photos: set = set()
+    clip_uses: dict = {}
+    for k, s in enumerate(c.scenes()):
+        matched = plan_scene_shots(c, s, used, used_photos, clip_uses)
+        c.progress("footage", 0.6 + 0.4 * (k + 1) / len(scenes), f"scene {s['idx']}: {matched} shots matched to the narration")
     return None
 
 
@@ -680,61 +760,93 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         placed.append((t, secs, g))
         cursor = t + secs + 4.0  # at least a few seconds of footage between animations
 
-    # 2) footage queue: clips are cut into short shots at moving in-points; photos get camera moves
-    media = []
+    # 2) footage: the shot list (Shot List Agent) says which picture shows each beat of narration; anything not
+    #    covered by it is filled from the scene's other media, least-used first. Clips are cut into short shots at
+    #    moving in-points; photos get camera moves; shots carry their factual on-screen label.
+    media: dict[str, dict] = {}
     for a in clips:
         p = c.local(a["meta"]["blurred_key"])
         src = duration(p)
         a_in, a_out = float(a["in_sec"] or 0), min(src, float(a["out_sec"] or src))
         if a_out - a_in < 3:  # in/out points beyond the part that was downloaded: use the whole downloaded piece
             a_in, a_out = 0.0, src
-        media.append({"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, a_out), "pos": a_in,
-                      "cap": 14.0 if a["tier"] == "real" else 10.0})
-    for i, p in enumerate(photo_paths):
-        media.append({"kind": "photo", "path": p, "n": i})
-    order = []  # interleave clips and photos so the look keeps changing
-    cl = [m for m in media if m["kind"] == "clip"]
-    ph = [m for m in media if m["kind"] == "photo"]
-    for i in range(max(len(cl), len(ph))):
-        order += cl[i:i + 1] + ph[i:i + 1]
-    mq = [0]
+        media[str(a["id"])] = {"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, a_out), "pos": a_in,
+                               "cap": 12.0 if a["tier"] == "real" else 8.0, "uses": 0}
+    for i, (a, p) in enumerate(zip(photos, photo_paths)):
+        media[str(a["id"])] = {"kind": "photo", "path": p, "n": i, "uses": 0}
+    shots = [x for x in (s.get("shots") or []) if s.get("shots_hash") == s["narration_hash"]]
+    planned_ids = {x["asset_id"] for x in shots if x.get("asset_id")}
+    pool = [m for k, m in media.items() if k not in planned_ids] or list(media.values())
+    labelled: set[int] = set()
     uses = [0]
     fallback_sents = [x for x in sents if 8 <= len(x["text"].split()) <= 30]
 
+    def shot_at(t: float):
+        cur = None
+        for k, x in enumerate(shots):
+            if x["start"] - 0.3 <= t:
+                cur = k
+            else:
+                break
+        return cur
+
+    def pool_pick():
+        if not pool:
+            return None
+        m = min(pool, key=lambda m: (m["uses"], m.get("n", 0)))
+        return m
+
+    def media_seg(m: dict, take: float, label: str) -> compose.Segment:
+        m["uses"] += 1
+        uses[0] += 1
+        if m["kind"] == "clip":
+            take = min(take, m["cap"])
+            if m["pos"] + take > m["out"]:
+                m["pos"] = m["in"]  # wrap around inside the clip
+            seg = compose.Segment("clip", m["path"], take, in_sec=m["pos"], label=label)
+            m["pos"] += take
+            return seg
+        take = min(take, 9.0)
+        if not label and uses[0] % 6 == 4 and take >= 5:  # now and then: the photo as a framed print over a backdrop
+            return anim_seg("framed", {"photo": str(m["path"]), "tilt": -3.0 if m["n"] % 2 else 2.5}, take)
+        return compose.Segment("image", m["path"], take, pan=MOVES[(m["n"] + m["uses"]) % len(MOVES)], photo=True, label=label)
+
     def fill(t0: float, t1: float, segs: list) -> None:
-        left = t1 - t0
-        while left > 0.05:
+        t = t0
+        while t1 - t > 0.05:
+            left = t1 - t
             if left < 2.5 and segs:
                 segs[-1].duration += left
                 return
-            if order:
-                m = order[mq[0] % len(order)]
-                mq[0] += 1
-                uses[0] += 1
-                if m["kind"] == "clip":
-                    take = min(m["cap"], left, m["out"] - m["in"])
-                    if m["pos"] + take > m["out"]:
-                        m["pos"] = m["in"]  # wrap around inside the clip
-                    segs.append(compose.Segment("clip", m["path"], max(take, min(left, 2.5)), in_sec=m["pos"]))
-                    m["pos"] += take
-                else:
-                    take = min(7.0, left)
-                    if uses[0] % 5 == 3 and take >= 5:  # now and then: the photo as a framed print over a backdrop
-                        segs.append(anim_seg("framed", {"photo": str(m["path"]), "tilt": -3.0 if m["n"] % 2 else 2.5}, take))
-                    else:
-                        segs.append(compose.Segment("image", m["path"], take, pan=MOVES[(m["n"] + uses[0]) % len(MOVES)], photo=True))
-                left -= segs[-1].duration
-            else:  # no footage at all for this scene: the key line being spoken, animated over a changing backdrop
-                tm = t1 - left
-                x = next((x for x in fallback_sents if float(x["start"]) >= tm - 1), None) or \
-                    (fallback_sents[uses[0] % len(fallback_sents)] if fallback_sents else None)
-                uses[0] += 1
-                take = min(8.0, left)
-                if x:
-                    segs.append(anim_seg("quote", {"text": x["text"], "title": s["chapter_title"] or ""}, take))
-                else:
-                    segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"]}, take))
-                left -= take
+            k = shot_at(t)
+            sh = shots[k] if k is not None else None
+            m = media.get(sh["asset_id"]) if sh and sh.get("asset_id") else None
+            if m is not None and m["kind"] == "photo" and m["uses"] > 0 and sh and t > sh["start"] + 9:
+                m = None  # a long beat: after one photo, continue with another picture
+            if m is not None:
+                end = shots[k + 1]["start"] if k + 1 < len(shots) else t1
+                take = max(2.5, min(left, end - t))
+            else:
+                m = pool_pick()
+                take = min(7.0, left)
+            label = ""
+            if sh and k not in labelled and sh.get("label") and m is not None:
+                label, _ = sh["label"], labelled.add(k)
+            if m is not None:
+                seg = media_seg(m, take, label)
+                segs.append(seg)
+                t += seg.duration
+                continue
+            # no footage at all for this scene: the key line being spoken, animated over a changing backdrop
+            x = next((x for x in fallback_sents if float(x["start"]) >= t - 1), None) or \
+                (fallback_sents[uses[0] % len(fallback_sents)] if fallback_sents else None)
+            uses[0] += 1
+            take = min(8.0, left)
+            if x:
+                segs.append(anim_seg("quote", {"text": x["text"], "title": s["chapter_title"] or ""}, take))
+            else:
+                segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"]}, take))
+            t += take
 
     segs: list[compose.Segment] = []
     segs.append(anim_seg("title", {"number": s["idx"] + 1, "title": s["chapter_title"] or s["title"],
@@ -750,8 +862,8 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
     if segs[-1].duration < 0.5 and len(segs) > 1:
         segs[-2].duration += segs[-1].duration
         segs.pop()
-    h = sha(CARD_STYLE_VERSION, s["narration_hash"], dur, [(x.kind, x.path.name, round(x.duration, 2), round(x.in_sec, 2), x.pan)
-                                                           for x in segs])
+    h = sha(CARD_STYLE_VERSION, s["narration_hash"], dur, [(x.kind, x.path.name, round(x.duration, 2), round(x.in_sec, 2), x.pan,
+                                                            x.label) for x in segs])
     return segs, h
 
 
