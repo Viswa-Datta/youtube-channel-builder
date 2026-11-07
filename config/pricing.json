@@ -161,6 +161,10 @@
     "editor_seo_overhead": {
       "in": 2500,
       "out": 2500
+    },
+    "shorts": {
+      "in": 16000,
+      "out": 2600
     }
   },
   "render_hours_per_video_minute": 0.012,
@@ -193,5 +197,10 @@
       5.0,
       15.0
     ]
+  },
+  "ai_images": {
+    "label": "Google Gemini image (AI scale-model illustrations)",
+    "per_image": 0.034,
+    "per_short": 3
   }
 }

@@ -104,3 +104,36 @@ export function tagString(tags: string[] | null): string {
   }
   return out.join(", ");
 }
+
+/**
+ * Slots for Shorts: the days WITHOUT a long video, same time of day, after the documentary's own release, one Short
+ * per day, skipping days other Shorts of the channel already took.
+ */
+export function shortSlots(plan: Plan, after: string | Date, taken: (string | Date)[], count: number): Date[] {
+  const longDays = plan.days.length ? plan.days : ["tue", "sat"];
+  const free = DAYS.filter((d) => !longDays.includes(d));
+  const shortPlan: Plan = { ...plan, days: free.length ? [...free] : [...DAYS] };
+  const takenDays = new Set(taken.map((t) => { const d = localDate(new Date(t).getTime(), plan.tz); return `${d.y}-${d.m}-${d.d}`; }));
+  const start = Math.max(Date.now(), new Date(after).getTime() + 3_600_000);
+  const out: Date[] = [];
+  for (const s of upcomingSlots(shortPlan, 60, start, 0)) {
+    const d = localDate(s.getTime(), plan.tz);
+    const k = `${d.y}-${d.m}-${d.d}`;
+    if (takenDays.has(k)) continue;
+    takenDays.add(k);
+    out.push(s);
+    if (out.length >= count) break;
+  }
+  return out;
+}
+
+/** Description for a Short: the agent's text with a pointer to the full documentary once it is on YouTube. */
+export function shortDescription(description: string, longUrl: string | null, channelUrl: string | null): string {
+  const parts = (description ?? "").split(/\n\s*\n/);
+  const head = parts.shift() ?? "";
+  const links: string[] = [];
+  if (longUrl) links.push(`▶ Full documentary: ${longUrl}`);
+  if (channelUrl) links.push(`🔔 Subscribe: ${channelUrl.replace(/\/+$/, "")}?sub_confirmation=1`);
+  return [head, ...(links.length ? [links.join("\n")] : []), ...parts].filter((x) => x.trim()).join("\n\n")
+    .replace(/</g, "(").replace(/>/g, ")").slice(0, 5000);
+}

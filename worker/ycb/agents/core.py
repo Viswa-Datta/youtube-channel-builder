@@ -706,3 +706,31 @@ def plan_shots(project: dict, scene: dict, beats: list[dict], items: list[dict],
         return out
     except Exception:  # noqa: BLE001 - without a plan the editor falls back to rotating the scene's media
         return None
+
+
+# ------------------------------------------------------------------ Shorts Agent
+def shorts_scripts(project: dict, script: str, claims: list[str], media: list[dict], n: int, gen_per_short: int,
+                   prov: str, model: str, user_id: str, render_id: str | None, avoid: list[str] | None = None) -> list:
+    """Write n vertical Shorts from the documentary's own research and script. media: [{id, kind, title}]."""
+    from ..schemas import ShortsBatch
+    listing = "\n".join(f"{m['id']} ({m['kind']}): {m['title'][:110]}" for m in media[:120]) or "(none)"
+    user = (f"Documentary: {project.get('selected_title') or project['title']}\n"
+            + (f"Shorts already made (tell different stories): {'; '.join(avoid)}\n" if avoid else "")
+            + f"\nMEDIA:\n{listing}\n\nRESEARCH CLAIMS:\n" + "\n".join(claims[:120])
+            + f"\n\nSCRIPT:\n{script[:24000]}")
+    out, _ = complete_json(out=ShortsBatch, agent="shorts", provider=prov, model=model,
+                           system=prompts.SHORTS.format(n=n, gen=gen_per_short), user=user, user_id=user_id,
+                           project_id=project["id"], render_id=render_id,
+                           idem=f"project:{project['id']}:shorts:{n}:{_h(script)}:{_h(' '.join(avoid or []))}",
+                           stage="shorts")
+    ids = {m["id"] for m in media}
+    for s in out.shorts:
+        seen, n_gen = set(), 0
+        for ln in s.lines:
+            if ln.asset not in ids or ln.asset in seen:
+                ln.asset = ""
+            seen.add(ln.asset)
+            if ln.asset or n_gen >= gen_per_short:
+                ln.generate = ""
+            n_gen += bool(ln.generate)
+    return out.shorts[:n]

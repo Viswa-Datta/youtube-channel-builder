@@ -9,7 +9,7 @@ import { DAYS, DAY_LABEL, formatSlot, fromLocalInput, toLocalInput } from "@/lib
 
 type Plan = { days: string[]; time: string; tz: string; youtube_url: string | null };
 
-function CopyBox({ label, text, rows }: { label: string; text: string; rows?: number }) {
+export function CopyBox({ label, text, rows }: { label: string; text: string; rows?: number }) {
   const [done, setDone] = useState(false);
   return (
     <div className="space-y-1">
@@ -28,7 +28,7 @@ function CopyBox({ label, text, rows }: { label: string; text: string; rows?: nu
   );
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+export function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">{n}</div>

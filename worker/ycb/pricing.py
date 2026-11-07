@@ -70,6 +70,23 @@ def estimate(action: str, tier: str, minutes: int = 12, scenes: int = 7, llm: st
         lines.append(_llm_line("Script Agent (draft)", llm, b["script_draft"]["in"], b["script_draft"]["out"]))
         lines.append(_llm_line("Visual Director Agent", llm, b["visual_director"]["in"], b["visual_director"]["out"]))
         lines.append(Line("Footage search (archives, Pexels, Pixabay)", "footage", "Free APIs", "requests", scenes * 4, 0.0, False, ""))
+    if action == "shorts":  # minutes = number of Shorts here (about 50 s each)
+        n = max(1, minutes)
+        lines.append(_llm_line(f"Shorts Agent ({n} scripts)", llm, b["shorts"]["in"], b["shorts"]["out"] * n))
+        chars = int(n * 130 * P["chars_per_word"])
+        v = P["tts"][tts]
+        lines.append(Line("Voice Agent (Shorts narration)", tts.split(":")[0], v["label"], "characters", chars,
+                          round(chars / 1e6 * v["per_m_chars"], 6), v["paid"],
+                          "" if not v["paid"] else P["tts"][P["tiers"]["free"]["tts"]]["label"] + " — $0"))
+        ai = P["ai_images"]
+        k = n * ai["per_short"]
+        lines.append(Line("AI illustrations (only where no real picture fits; at most)", "gemini", ai["label"], "requests", k,
+                          round(k * ai["per_image"], 6), True, "Real photos and clips only — $0"))
+        c = P["compute"][compute]
+        hours = n * P["render_hours_per_video_minute"]
+        lines.append(Line("Render worker (vertical cut, mix)", "compute", c["label"], "seconds", int(hours * 3600),
+                          round(hours * c["per_render_hour"], 6), c["paid"],
+                          "" if not c["paid"] else P["compute"]["self_hosted"]["label"] + " — $0"))
     if action in ("whole_video", "full"):
         tin = scenes * b["script_expand_overhead_in_per_scene"]
         tout = int(words * tpw)

@@ -348,3 +348,65 @@ class ProductionPack(BaseModel):
     footage: FootagePlan
     seo: SeoPack
     chapters: list[Chapter]
+
+
+# ------------------------------------------------------------------ Shorts Agent
+class ShortLine(BaseModel):
+    text: str = Field(description="one spoken sentence")
+    asset: str = Field(default="", description="id of the listed photo/clip that shows this line, or ''")
+    generate: str = Field(default="", description="one sentence for an AI scale-model illustration when no item fits")
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _t(cls, v):
+        return re.sub(r"\s+", " ", str(v or "")).strip()[:300]
+
+    @field_validator("asset", mode="before")
+    @classmethod
+    def _a(cls, v):
+        return "" if v is None else str(v).strip()[:12]
+
+    @field_validator("generate", mode="before")
+    @classmethod
+    def _g(cls, v):
+        return "" if v is None else str(v).strip()[:400]
+
+
+class ShortScript(BaseModel):
+    title: str = Field(description="YouTube title, max 70 characters, no hashtags")
+    hook: str = Field(description="on-screen hook for the first seconds, max 48 characters")
+    lines: list[ShortLine]
+    description: str = Field(default="", description="2-3 sentences")
+    hashtags: list[str] = Field(default_factory=list)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _title(cls, v):
+        return re.sub(r"#\w+", "", str(v or "")).strip()[:70]
+
+    @field_validator("hook", mode="before")
+    @classmethod
+    def _hook(cls, v):
+        return str(v or "").strip()[:60]
+
+    @field_validator("hashtags", mode="before")
+    @classmethod
+    def _tags(cls, v):
+        out = []
+        for t in v or []:
+            t = re.sub(r"[^\w]", "", str(t))
+            if t and t.lower() not in [x.lower() for x in out] and t.lower() != "shorts":
+                out.append(t[:30])
+        return out[:4]
+
+    @model_validator(mode="after")
+    def _len(self) -> "ShortScript":
+        self.lines = [x for x in self.lines if x.text][:14]
+        words = sum(len(x.text.split()) for x in self.lines)
+        if not 70 <= words <= 175:
+            raise ValueError(f"a Short needs 100-150 spoken words (got {words})")
+        return self
+
+
+class ShortsBatch(BaseModel):
+    shorts: list[ShortScript]

@@ -13,7 +13,7 @@ const repo = join(here, "..", "..");
 const P = JSON.parse(readFileSync(join(repo, "config", "pricing.json"), "utf8"));
 
 const cases: [string, string, number][] = [];
-for (const a of ["channel_kit", "channel_kit_item", "ideas", "production_pack", "whole_video", "full"])
+for (const a of ["channel_kit", "channel_kit_item", "ideas", "production_pack", "whole_video", "full", "shorts"])
   for (const t of ["free", "standard", "premium"]) for (const m of [8, 12, 20, 30]) cases.push([a, t, m]);
 
 test("TS estimator matches Python estimator for every action/tier/length", () => {

@@ -51,6 +51,9 @@ def dispatch(job: dict, hb: queue.Heartbeat) -> None:
         agents.production_pack(job)
     elif kind == "render_stage":
         pipeline.run_stage(job, hb)
+    elif kind == "shorts":
+        from .stages import shorts
+        shorts.run_shorts(job, hb)
     elif kind == "publish":
         youtube.publish(job)
     elif kind == "delete_user_data":

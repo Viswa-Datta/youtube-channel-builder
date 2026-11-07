@@ -1,7 +1,11 @@
 import { requireUser } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
 import { UploadKit } from "@/components/upload-kit";
-import { finalDescription, nextFreeSlot, tagString } from "@/lib/schedule";
+import { finalDescription, nextFreeSlot, shortDescription, shortSlots, tagString } from "@/lib/schedule";
+import { ShortsPanel, type ShortView } from "@/components/shorts-panel";
+import { GenerateButton } from "@/components/generate-button";
+import { JobWatcher } from "@/components/job-watcher";
+import { costContext } from "@/lib/context";
 
 export const metadata = { title: "Publish" };
 
@@ -31,6 +35,33 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
     .slice(0, 2)
     .map((s) => { const pr = Array.isArray(s.projects) ? s.projects[0] : s.projects; return { title: pr.selected_title ?? pr.title, url: s.youtube_url! }; });
   const name = (p.selected_title ?? p.title).replace(/[^\w]+/g, "-").slice(0, 60);
+  // Shorts: made from this documentary, planned on the days between long videos, after it comes out.
+  const [{ data: shortRows }, { data: shortJobs }, { data: otherShorts }] = await Promise.all([
+    sb.from("shorts").select("*").eq("project_id", id).order("idx"),
+    sb.from("jobs").select("id,status").eq("project_id", id).eq("kind", "shorts").in("status", ["queued", "running"]).order("created_at", { ascending: false }).limit(1),
+    sb.from("shorts").select("planned_at,posted_at,project_id,projects!inner(channel_id)").eq("projects.channel_id", p.channel_id).neq("project_id", id),
+  ]);
+  const shortJob = shortJobs?.[0]?.id ?? null;
+  const rows = (shortRows ?? []) as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const takenShort = [...((otherShorts ?? []) as { planned_at: string | null; posted_at: string | null }[]).map((x) => x.planned_at ?? x.posted_at),
+    ...rows.map((r) => r.planned_at)].filter(Boolean) as string[];
+  const freeShortSlots = shortSlots(plan, pub?.posted_at ?? slot, takenShort, rows.filter((r) => !r.planned_at).length);
+  let nFree = 0;
+  const longUrl = pub?.youtube_url ?? null;
+  const shorts: ShortView[] = await Promise.all(rows.map(async (r) => {
+    const fname = `${name}-short-${r.idx + 1}`;
+    const s = r.planned_at ?? (r.status === "succeeded" ? freeShortSlots[nFree++]?.toISOString() ?? null : null);
+    return {
+      id: r.id, idx: r.idx, status: r.status, error: r.error, title: r.title, hook: r.hook,
+      description: shortDescription(r.description ?? "", longUrl, ch?.youtube_url ?? null),
+      tags: tagString(["shorts", ...(r.hashtags ?? []), ...(p.tags ?? [])]),
+      mp4: r.mp4_path ? await signedUrl(r.mp4_path, 3600, `${fname}.mp4`) : null,
+      srt: r.srt_path ? await signedUrl(r.srt_path, 3600, `${fname}.srt`) : null,
+      duration: r.duration_sec ? Number(r.duration_sec) : null, slot: s, slotIsSaved: !!r.planned_at,
+      youtubeUrl: r.youtube_url, aiCount: ((r.lines ?? []) as { ai?: boolean }[]).filter((x) => x.ai).length,
+    };
+  }));
+  const { ctx, defaultTier } = await costContext(2, p.tier);
   const items = ((checklist?.items ?? []) as { key: string; label: string; pass: boolean; detail: string }[]);
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -47,6 +78,21 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
         srt={render.srt_path ? await signedUrl(render.srt_path, 3600, `${name}.srt`) : null}
         checklist={items}
       />
+      <section className="space-y-3 pt-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-xl">Shorts</h2>
+            <p className="text-sm text-muted-foreground">Vertical 45–55 s Shorts with their own script and hook, made from this documentary&apos;s research.</p>
+          </div>
+          {!shortJob && (
+            <GenerateButton label={rows.length ? "Make 2 more Shorts" : "Make 2 Shorts"} action="shorts" minutes={2}
+              defaultTier={defaultTier} ctx={ctx} endpoint={`/api/projects/${id}/shorts`} payload={{ n: 2 }} variant={rows.length ? "outline" : "default"} />
+          )}
+        </div>
+        {shortJob && <JobWatcher jobId={shortJob} label="Making Shorts" />}
+        {rows.length > 0 && <ShortsPanel projectId={id} tz={plan.tz} shorts={shorts} longTitle={p.selected_title ?? p.title}
+          longPosted={!!longUrl} busy={!!shortJob} />}
+      </section>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // Pure cost estimator. Mirrors worker/ycb/pricing.py line for line; tests/pricing.test.ts compares both.
 export type Tier = "free" | "standard" | "premium";
-export type Action = "channel_kit" | "channel_kit_item" | "ideas" | "production_pack" | "whole_video" | "full";
+export type Action = "channel_kit" | "channel_kit_item" | "ideas" | "production_pack" | "whole_video" | "full" | "shorts";
 
 export interface Line {
   stage: string;
@@ -86,6 +86,29 @@ export function estimateWith(
     lines.push(llmLine(P, "Script Agent (draft)", llm, b.script_draft.in, b.script_draft.out));
     lines.push(llmLine(P, "Visual Director Agent", llm, b.visual_director.in, b.visual_director.out));
     lines.push({ stage: "Footage search (archives, Pexels, Pixabay)", provider: "footage", plan: "Free APIs", unit_type: "requests", units: scenes * 4, cost_usd: 0, paid: false, free_alternative: "" });
+  }
+  if (action === "shorts") {
+    // minutes = number of Shorts here (about 50 s each)
+    const n = Math.max(1, minutes);
+    lines.push(llmLine(P, `Shorts Agent (${n} scripts)`, llm, b.shorts.in, b.shorts.out * n));
+    const chars = Math.trunc(n * 130 * P.chars_per_word);
+    const v = P.tts[tts];
+    lines.push({
+      stage: "Voice Agent (Shorts narration)", provider: tts.split(":")[0], plan: v.label, unit_type: "characters", units: chars,
+      cost_usd: round((chars / 1e6) * v.per_m_chars, 6), paid: v.paid,
+      free_alternative: v.paid ? `${P.tts[P.tiers.free.tts].label} — $0` : "",
+    });
+    const ai = P.ai_images;
+    const k = n * ai.per_short;
+    lines.push({ stage: "AI illustrations (only where no real picture fits; at most)", provider: "gemini", plan: ai.label, unit_type: "requests",
+      units: k, cost_usd: round(k * ai.per_image, 6), paid: true, free_alternative: "Real photos and clips only — $0" });
+    const c = P.compute[compute];
+    const hours = n * P.render_hours_per_video_minute;
+    lines.push({
+      stage: "Render worker (vertical cut, mix)", provider: "compute", plan: c.label, unit_type: "seconds", units: Math.trunc(hours * 3600),
+      cost_usd: round(hours * c.per_render_hour, 6), paid: c.paid,
+      free_alternative: c.paid ? `${P.compute.self_hosted.label} — $0` : "",
+    });
   }
   if (action === "whole_video" || action === "full") {
     const tin = scenes * b.script_expand_overhead_in_per_scene;
