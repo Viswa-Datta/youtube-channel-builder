@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+import re
+
 import requests
 
 from ..config import require, settings
@@ -104,13 +106,22 @@ def nara(query: str, rows: int = 10) -> list[Candidate]:
 # ---------------------------------------------------------------- (b) news / documents
 def gdelt_news(query: str, rows: int = 25, gov_only: bool = False) -> list[dict]:
     """Contemporaneous news (or .gov releases) as research sources. Free, no key."""
-    q = f"{query} domain:.gov" if gov_only else query
+    # Exact phrase, English sources only: a loose keyword search returns unrelated articles in any language.
+    phrase = '"' + query.replace('"', "").strip() + '"'
+    q = f"{phrase} sourcelang:english" + (" domain:.gov" if gov_only else "")
     r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc", headers=UA, timeout=30,
-                     params={"query": q, "mode": "ArtList", "format": "json", "maxrecords": rows, "sort": "DateDesc"})
+                     params={"query": q, "mode": "ArtList", "format": "json", "maxrecords": rows, "sort": "HybridRel"})
     if r.status_code != 200 or not r.text.strip().startswith("{"):
         return []
-    return [{"title": a.get("title"), "url": a.get("url"), "publisher": a.get("domain"),
-             "published_at": (a.get("seendate") or "")[:8], "excerpt": ""} for a in r.json().get("articles", [])]
+    words = [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 2]
+    out = []
+    for a in r.json().get("articles", []):
+        t = (a.get("title") or "").lower()
+        if words and sum(w in t for w in words) < max(1, len(words) // 2):
+            continue  # the headline must be about the subject
+        out.append({"title": a.get("title"), "url": a.get("url"), "publisher": a.get("domain"),
+                    "published_at": (a.get("seendate") or "")[:8], "excerpt": ""})
+    return out
 
 
 def courtlistener(query: str, rows: int = 10) -> list[dict]:

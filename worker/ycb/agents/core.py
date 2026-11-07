@@ -252,6 +252,8 @@ def _retrieve(project: dict, query: str, fixture_set: str | None, idea: dict | N
     for c in safe(sources.library_of_congress, query, rows=5):
         found.append({"title": c.title, "url": c.source_url, "publisher": "Library of Congress",
                       "published_at": c.release_date, "tier": "reference", "provider": "loc", "excerpt": ""})
+    # A source with no text cannot back a claim (the research agent would only see its headline): leave it out.
+    found = [s for s in found if len((s.get("excerpt") or "").strip()) >= 40]
     found.sort(key=lambda s: TIER_ORDER[s["tier"]])
     return found[:60]
 

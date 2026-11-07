@@ -87,7 +87,9 @@ export function finalDescription(description: string, watchNext: { title: string
   const block: string[] = [];
   if (watchNext.length) block.push(...watchNext.slice(0, 3).map((v) => `▶ Watch next: ${v.title}\n${v.url}`));
   if (channelUrl) block.push(`🔔 Subscribe for more: ${channelUrl.replace(/\/+$/, "")}?sub_confirmation=1`);
-  return [hook, ...(block.length ? [block.join("\n\n")] : []), ...rest].filter((x) => x?.trim()).join("\n\n");
+  // YouTube: max 5,000 characters, no angle brackets.
+  return [hook, ...(block.length ? [block.join("\n\n")] : []), ...rest].filter((x) => x?.trim()).join("\n\n")
+    .replace(/</g, "(").replace(/>/g, ")").slice(0, 5000);
 }
 
 /** YouTube allows up to 500 characters of tags in total. */
