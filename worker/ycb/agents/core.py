@@ -94,6 +94,9 @@ def channel_kit_item(job: dict) -> dict:
 
 
 # ------------------------------------------------------------------ Ideas Agent
+MIN_IDEA_RANK = 6.0  # ideas below this are not shown
+
+
 def ideas(job: dict) -> dict:
     p = job["payload"]
     ch = db.q1("select * from channels where id=%s", (p["channel_id"],))
@@ -110,58 +113,69 @@ def ideas(job: dict) -> dict:
             f"Subjects for this niche: {pre['subjects']}.\nGuidance: {pre['ideas']}\nSafety: {pre['safety']}\n"
             f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
             f"Already covered (never suggest these subjects again): {json.dumps(existing[:400])}")
+    est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
+    n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
+    want = int(p.get("count", 25))
+    from ..config import settings as _settings
+    ai_scenes = _settings.gen_media != "off"
+
+    def measure(cands: list) -> list:
+        """Check subjects live (Wikipedia, real page views, free media) and replace guessed scores with measured ones."""
+        probes = probe_ideas(cands, job) if not fx else {}
+        out = []
+        for k, i in enumerate(cands):
+            pr = probes.get(k)
+            if pr is not None:
+                feas = pr["feasibility"]
+                if ai_scenes and pr["verified"]:
+                    feas = max(feas, 7)  # AI scale-model scenes + animations cover what archives lack
+                i.footage_feasibility_score = feas
+                if pr.get("demand") is not None:
+                    i.demand_score = pr["demand"]  # real Wikipedia page views, not guessed
+            out.append((i, pr))
+        return out
+
+    rows: list = []
     if fx:
         batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
                                  user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
-    else:  # two halves of ~13: each answer is small enough to come back quickly
+        rows = measure(batch.ideas)
+    else:
+        # Rounds of ~13 ideas, each checked live; only ideas that rank MIN_IDEA_RANK or higher are kept. Repeats of
+        # subjects the channel was already offered are thrown away. Stops at `want` strong ideas or 6 rounds.
         from ..schemas import IdeaPart
-        want = int(p.get("count", 25))
-        got: list = []
         taken = {e.strip().lower() for e in existing}
-        part = 0
-        # Up to 4 rounds: repeats of covered subjects are thrown away, so ask again until there are enough new ones.
-        while len(got) < want and part < 4:
-            n = min(13, want - len(got))
+        proposed: list[str] = []
+        weak = 0
+        for part in range(6):
+            good = [r for r in rows if rank_score(r[0]) >= MIN_IDEA_RANK and (r[1] is None or r[1]["verified"])]
+            if len(good) >= want:
+                break
+            n = 13
             ask = user.replace(f"Count: {want}", f"Count: {n} (return exactly {n} ideas)")
-            if got:
-                ask += "\nAlso already proposed in this batch (different subjects only): " + json.dumps([i.case_name or i.title for i in got])
-            half, _ = complete_json(out=IdeaPart, agent="ideas", provider=prov, model=model, system=prompts.IDEAS.replace("Return 20-30 ideas.", f"Return {n} ideas."),
+            if proposed:
+                ask += "\nAlso already proposed in this batch (different subjects only): " + json.dumps(proposed)
+            if weak:
+                ask += ("\nMany earlier suggestions were rejected for LOW PUBLIC INTEREST. Choose subjects that far more "
+                        "people read about and search for.")
+            half, _ = complete_json(out=IdeaPart, agent="ideas", provider=prov, model=model,
+                                    system=prompts.IDEAS.replace("Return 20-30 ideas.", f"Return {n} ideas."),
                                     user=ask, user_id=job["user_id"], idem=f"job:{job['id']}:ideas:{part}")
+            fresh = []
             for i in half.ideas:
                 k = (i.case_name or i.title or "").strip().lower()
+                proposed.append(i.case_name or i.title)
                 if k and k not in taken:
                     taken.add(k)
-                    got.append(i)
-            part += 1
-            hb_note(job, f"ideas written: {len(got)}/{want}")
-        batch = IdeaBatch.model_construct(ideas=got)
-    est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
-    n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
-    # One idea per case: drop repeats of the same case (keep the first) and cases already on the board.
-    seen = {(r["case_info"] or {}).get("case_name", "").strip().lower()
-            for r in db.q("select case_info from ideas where channel_id=%s", (ch["id"],))} - {""}
-    uniq = []
-    for i in batch.ideas:
-        k = (i.case_name or "").strip().lower()
-        if k and k in seen:
-            continue
-        seen.add(k)
-        uniq.append(i)
-    batch.ideas = uniq
-    probes = probe_ideas(batch.ideas, job) if not fx else {}
-    rows = []
-    for k, i in enumerate(batch.ideas):
-        pr = probes.get(k)
-        if pr is not None:
-            i.footage_feasibility_score = pr["feasibility"]  # measured, not guessed
-            if pr.get("demand") is not None:
-                i.demand_score = pr["demand"]  # real Wikipedia page views, not guessed
-        rows.append((i, pr))
-    # Drop cases nothing could confirm, as long as enough confirmed ones remain; otherwise keep them, flagged.
-    confirmed = [r for r in rows if r[1] is None or r[1]["verified"]]
-    if len(confirmed) >= 10:
-        rows = confirmed
-    ranked = sorted(rows, key=lambda r: (rank_score(r[0]), bool(r[1] and r[1]["verified"])), reverse=True)
+                    fresh.append(i)
+            measured = measure(fresh)
+            weak += sum(1 for i, _ in measured if rank_score(i) < MIN_IDEA_RANK)
+            rows += measured
+            good = [r for r in rows if rank_score(r[0]) >= MIN_IDEA_RANK and (r[1] is None or r[1]["verified"])]
+            hb_note(job, f"strong ideas found: {len(good)}/{want} (checked {len(rows)})")
+        rows = [r for r in rows if rank_score(r[0]) >= MIN_IDEA_RANK and (r[1] is None or r[1]["verified"])]
+    probes = {k: r[1] for k, r in enumerate(rows) if r[1] is not None}
+    ranked = sorted(rows, key=lambda r: (rank_score(r[0]), bool(r[1] and r[1]["verified"])), reverse=True)[:want]
     for pos, (i, pr) in enumerate(ranked):
         case = {k: v for k, v in {"case_name": i.case_name, "location": i.location, "year": i.year, "agency": i.agency,
                                    "case_status": i.case_status, "public_footage": i.public_footage,

@@ -36,8 +36,9 @@ WHAT MAKES A GOOD IDEA (this is a story channel, not an encyclopedia):
 - Titles like big documentary channels: subject name + a curiosity hook or a striking true number, under 70 chars,
   e.g. "How New York Built the Empire State Building in 410 Days", "The Bridge That Tore Itself Apart",
   "Why Japan Built a Tunnel Under the Sea". No vague taglines ("Bridging the Clouds", "Taming the River").
-- Variety: at most a third should be world-famous icons; the rest are well-documented but less over-covered
-  subjects with strong stories. Spread across categories and eras (and countries) - never a list of the same kind.
+- Pick subjects LOTS of people are curious about (famous, much-read, often in the news); popular subjects get views.
+  What must be fresh is the ANGLE, not the obscurity of the subject. Avoid niche subjects few people have heard of.
+- Spread across categories, eras and countries - never a list of the same kind of thing.
 - Never propose anything from the "Already covered" list, even under another name or angle.
 Do not invent facts in the hook; phrase uncertain details as questions. {STYLE_GUARD}
 Return 20-30 ideas. Return JSON only."""
