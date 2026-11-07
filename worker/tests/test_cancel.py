@@ -39,3 +39,4 @@ def test_lanes_split_voice_from_everything_else(user):
     quick_job = queue.claim(lane="quick")
     assert main_job["id"] == o and voice_job["id"] == v and quick_job["id"] == q
     assert queue.claim(lane="voice") is None
+    db.x("update jobs set status='succeeded', locked_by=null where id in (%s,%s,%s)", (v, o, q))  # leave nothing claimable
