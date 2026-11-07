@@ -12,7 +12,9 @@ export async function wakeWorker(): Promise<void> {
   if (Date.now() - lastWake < 20_000) return; // one wake call per 20 s per server instance is plenty
   lastWake = Date.now();
   try {
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    // `fly tokens create` prints "FlyV1 fm2_..." which is used as-is; older personal tokens use Bearer.
+    const auth = token.startsWith("FlyV1 ") ? token : `Bearer ${token}`;
+    const headers = { Authorization: auth, "Content-Type": "application/json" };
     const r = await fetch(`${API}/apps/${app}/machines`, { headers, cache: "no-store", signal: AbortSignal.timeout(8000) });
     if (!r.ok) return;
     const machines = (await r.json()) as { id: string; state: string }[];
