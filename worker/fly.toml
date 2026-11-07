@@ -8,8 +8,17 @@ primary_region = "sjc"   # near the Supabase project (us-west-2)
 
 [[vm]]
   processes = ["worker"]
-  size = "shared-cpu-4x"
+  size = "performance-2x"   # 2 dedicated cores: shared CPUs are throttled to a fraction of a core under steady load
   memory = "4gb"
+
+[env]
+  IDLE_EXIT_MINUTES = "10"  # turn the machine off after 10 idle minutes; the website wakes it for new work
+
+# Exit code 0 (idle) leaves the machine stopped, so Fly bills nothing while idle; a crash restarts it.
+[[restart]]
+  policy = "on-failure"
+  retries = 10
+  processes = ["worker"]
 
 [mounts]
   source = "ycb_work"

@@ -1,3 +1,4 @@
+import { wakeWorker } from "@/lib/fly";
 import "server-only";
 import { supabaseAdmin } from "./supabase/server";
 import { estimate, type Action, type Tier } from "./pricing";
@@ -41,6 +42,7 @@ export async function enqueueJob(opts: {
     .select()
     .maybeSingle();
   if (error) throw error;
+  await wakeWorker();
   if (!data && opts.idempotencyKey) {
     // already enqueued (double click / retry): return the existing job instead of nothing
     const { data: existing } = await admin.from("jobs").select("*").eq("idempotency_key", opts.idempotencyKey).single();

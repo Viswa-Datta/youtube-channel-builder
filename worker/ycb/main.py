@@ -67,10 +67,31 @@ def _on_render_failure(job: dict, msg: str, final: bool) -> None:
             db.x("update projects set status='failed' where id=%s", (job["project_id"],))
 
 
+_busy = 0
+_last_active = time.time()
+
+
+def _work_pending() -> bool:
+    """Queued work due within 30 min (including retries waiting out their back-off) keeps the machine on."""
+    r = db.q1("""select 1 from jobs where (status='queued' and run_after < now() + interval '30 minutes')
+                 or (status='running' and locked_until > now()) limit 1""")
+    return bool(r)
+
+
 def run_one(kinds: list[str] | None = None, lane: str | None = None) -> bool:
+    global _busy, _last_active
     job = queue.claim(kinds, lane)
     if not job:
         return False
+    _busy += 1
+    try:
+        return _run_claimed(job, lane)
+    finally:
+        _busy -= 1
+        _last_active = time.time()
+
+
+def _run_claimed(job: dict, lane: str | None) -> bool:
     print(f"[{settings.worker_id}{'/' + lane if lane else ''}] claimed {job['kind']}:{job.get('stage') or ''} {job['id']} attempt {job['attempts']}", flush=True)
     with queue.Heartbeat(str(job["id"])) as hb:
         try:
@@ -100,10 +121,19 @@ def run_one(kinds: list[str] | None = None, lane: str | None = None) -> bool:
 
 
 def _loop(lane: str | None) -> None:
+    global _stop
     backoff = 5
     while not _stop:
         try:
             if not run_one(lane=lane):
+                idle_min = settings.idle_exit_minutes
+                if (lane == "main" and idle_min > 0 and _busy == 0 and time.time() - _last_active > idle_min * 60
+                        and not _work_pending()):
+                    # Nothing to do: turn the machine off so Fly stops billing. The website starts it again when
+                    # a new job is queued (needs FLY_API_TOKEN + FLY_APP in Vercel).
+                    print(f"[{settings.worker_id}] idle for {idle_min} min: stopping the machine", flush=True)
+                    _stop = True
+                    break
                 time.sleep(settings.poll_seconds)
             backoff = 5
         except Exception as e:  # noqa: BLE001 — database unreachable etc.: wait and retry, never crash-loop

@@ -1,3 +1,4 @@
+import { wakeWorker } from "@/lib/fly";
 import { NextResponse } from "next/server";
 import { apiUser, handler, owned, HttpError } from "@/lib/api";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -19,5 +20,6 @@ export const POST = handler(async (_req: Request, ctx: { params: Promise<{ id: s
     { onConflict: "idempotency_key", ignoreDuplicates: true }).select().maybeSingle();
   if (error) throw error;
   const j = job ?? (await admin.from("jobs").select("*").eq("idempotency_key", key).single()).data;
+  await wakeWorker();
   return NextResponse.json({ ok: true, job: j });
 });

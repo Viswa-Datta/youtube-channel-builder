@@ -1,3 +1,4 @@
+import { wakeWorker } from "@/lib/fly";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser, body, handler } from "@/lib/api";
@@ -18,5 +19,6 @@ export const POST = handler(async (req: Request) => {
     const { supabaseAdmin } = await import("@/lib/supabase/server");
     await supabaseAdmin().from("jobs").update({ status: "queued", run_after: new Date().toISOString() }).eq("user_id", user.id).eq("status", "paused_cap");
   }
+  await wakeWorker();
   return NextResponse.json({ ok: true });
 });

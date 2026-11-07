@@ -1,3 +1,4 @@
+import { wakeWorker } from "@/lib/fly";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser, body, handler, owned, HttpError } from "@/lib/api";
@@ -39,5 +40,6 @@ export const POST = handler(async (req: Request, ctx: { params: Promise<{ id: st
       payload: { publish_id: pub.id, contains_synthetic_media: b.contains_synthetic_media, category_id: b.category_id },
       idempotency_key: `publish:${pub.id}`, max_attempts: 6 });
   }
+  await wakeWorker();
   return NextResponse.json({ publish: pub, checklist });
 });

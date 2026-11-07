@@ -21,6 +21,7 @@ class Settings:
     worker_id: str = field(default_factory=lambda: _env("WORKER_ID", f"{socket.gethostname()}-{os.getpid()}"))
     lease_seconds: int = field(default_factory=lambda: int(_env("JOB_LEASE_SECONDS", "90")))
     poll_seconds: float = field(default_factory=lambda: float(_env("JOB_POLL_SECONDS", "2")))
+    idle_exit_minutes: int = field(default_factory=lambda: int(_env("IDLE_EXIT_MINUTES", "0")))  # >0: stop when idle
     work_dir: Path = field(default_factory=lambda: Path(_env("WORK_DIR", "/tmp/ycb-work")))
 
     # storage

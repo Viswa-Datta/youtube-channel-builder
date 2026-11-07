@@ -1,3 +1,4 @@
+import { wakeWorker } from "@/lib/fly";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser, body, handler } from "@/lib/api";
@@ -15,5 +16,6 @@ export const POST = handler(async (req: Request) => {
     idempotency_key: `delete:${user.id}:${new Date().toISOString().slice(0, 10)}`, priority: 1 });
   // Google tokens are revoked by the worker job; the auth user (and every row, by cascade) is deleted after media.
   if (b.delete_account) await (await import("@/lib/supabase/server")).supabaseServer().then((sb) => sb.auth.signOut());
+  await wakeWorker();
   return NextResponse.json({ ok: true, queued: true });
 });
