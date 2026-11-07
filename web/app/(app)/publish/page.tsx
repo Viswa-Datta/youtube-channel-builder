@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { plansConfig } from "@/lib/pricing";
+import { formatSlot } from "@/lib/schedule";
 
 export const metadata = { title: "Publish" };
 
@@ -13,9 +14,25 @@ export default async function PublishIndex() {
     sb.from("publishes").select("id,status,privacy,youtube_url,created_at,project_id").order("created_at", { ascending: false }).limit(20),
     sb.from("youtube_quota").select("day,units").order("day", { ascending: false }).limit(14),
   ]);
+  const { data: planned } = await sb.from("publishes")
+    .select("id,planned_at,youtube_url,project_id,projects!inner(selected_title,title,channels!inner(publish_tz))")
+    .not("planned_at", "is", null).gte("planned_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .order("planned_at", { ascending: true });
+  type Row = { id: string; planned_at: string; youtube_url: string | null; project_id: string;
+    projects: { selected_title: string | null; title: string; channels: { publish_tz: string } } };
+  const upcoming = (planned ?? []) as unknown as Row[];
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <h1 className="font-serif text-2xl">Publish</h1>
+      {upcoming.length > 0 && (
+        <Card><CardHeader><CardTitle className="text-base">Release schedule</CardTitle></CardHeader>
+          <CardContent className="space-y-1.5 text-sm">{upcoming.map((u) => (
+            <Link key={u.id} href={`/projects/${u.project_id}/publish`} className="flex flex-wrap items-center justify-between gap-2 rounded-md p-1.5 hover:bg-muted">
+              <span className="min-w-0"><b>{formatSlot(u.planned_at, u.projects.channels.publish_tz)}</b> · {u.projects.selected_title ?? u.projects.title}</span>
+              <Badge variant={u.youtube_url ? "secondary" : "outline"}>{u.youtube_url ? "scheduled on YouTube" : "upload kit ready"}</Badge>
+            </Link>
+          ))}</CardContent></Card>
+      )}
       <div className="space-y-2">
         {(ready ?? []).map((p) => (
           <Link key={p.id} href={`/projects/${p.id}/publish`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-3 hover:bg-muted">

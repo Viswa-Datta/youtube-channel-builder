@@ -720,3 +720,49 @@ def points(out: Path, title: str, items: list[str], seconds: float = 8.0, accent
         bg.finish(ImageDraw.Draw(img))
         fr.put(img)
     return fr.close()
+
+
+END_CARD_SECONDS = 20.0
+# Where the YouTube end-screen elements go (fractions of the frame). The video draws matching frames so the clickable
+# elements added in YouTube Studio sit exactly on them.
+END_SLOTS = {"left": (0.06, 0.38, 0.40, 0.72), "right": (0.60, 0.38, 0.94, 0.72), "subscribe": (0.50, 0.55, 0.052)}  # sub: cx, cy, r (of W)
+
+
+def end_card(out: Path, channel: str, topic: str, seconds: float = END_CARD_SECONDS, accent=ACC,
+             bg: Backdrop | None = None) -> Path:
+    """Last 20 s of every video: 'Thanks for watching', a subscribe circle and two 'watch next' frames, laid out to
+    match the YouTube end screen (Video + Subscribe + Video) so the clickable elements line up."""
+    bg = bg or Backdrop("aurora", accent, seed=7)
+    fr = Frames(out, seconds)
+    lx0, ly0, lx1, ly1 = END_SLOTS["left"]
+    rx0, ry0, rx1, ry1 = END_SLOTS["right"]
+    scx, scy, sr = END_SLOTS["subscribe"]
+    for i in range(fr.n):
+        t = i / FPS
+        img = bg.frame(t, seconds)
+        d = ImageDraw.Draw(img)
+        lay, ld = _layer()
+        a = ease(t / 0.8)
+        _fade_text(ld, (W / 2, H * 0.12 + 30 * (1 - a)), "THANKS FOR WATCHING", _heavy(84), WHITE, a, anchor="mm", stroke=2)
+        _fade_text(ld, (W / 2, H * 0.23), f"Subscribe for more {topic}".strip(), font(SANS_B, 44), (225, 228, 235),
+                   ease((t - 0.5) / 0.8), anchor="mm")
+        for k, (x0, y0, x1, y1) in enumerate(((lx0, ly0, lx1, ly1), (rx0, ry0, rx1, ry1))):
+            p = ease_out((t - 0.9 - k * 0.25) / 0.7)
+            if p <= 0:
+                continue
+            X0, Y0, X1, Y1 = x0 * W, y0 * H, x1 * W, y1 * H
+            sh = (1 - p) * 60
+            ld.rounded_rectangle([X0, Y0 + sh, X1, Y1 + sh], radius=18, fill=(0, 0, 0, int(150 * p)),
+                                 outline=(*accent, int(255 * p)), width=5)
+            _fade_text(ld, ((X0 + X1) / 2, Y1 + sh + 46), "WATCH NEXT" if k == 0 else "MORE FROM " + channel.upper()[:22],
+                       font(SANS_B, 34), WHITE, p, anchor="mm")
+        p = pop((t - 1.6) / 0.6)
+        if p > 0:
+            R = sr * W * p
+            cx, cy = scx * W, scy * H
+            ld.ellipse([cx - R, cy - R, cx + R, cy + R], fill=(*accent, 235), outline=(255, 255, 255, 255), width=4)
+            _fade_text(ld, (cx, cy + sr * W + 44), "SUBSCRIBE", _heavy(36), WHITE, min(1.0, p), anchor="mm")
+        img.paste(lay, (0, 0), lay)
+        bg.finish(ImageDraw.Draw(img))
+        fr.put(img)
+    return fr.close()

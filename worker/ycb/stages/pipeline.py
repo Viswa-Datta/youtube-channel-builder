@@ -798,6 +798,12 @@ def stage_assemble(c: Ctx) -> None:
         wavs.append(c.local(s["audio_path"]))
         c.progress("assemble", (k + 1) / len(scenes) * 0.6, f"scene {s['idx']} composed")
 
+    # End card: last 20 s with "thanks for watching", a subscribe circle and two "watch next" frames that the
+    # YouTube end-screen elements are placed on (YouTube allows end screens only in the last 5-20 s).
+    if not c.fx:
+        outro, silence = end_card_part(c)
+        parts.append(outro)
+        wavs.append(silence)
     vid = compose.concat_videos(parts, c.work / "program.mp4")
     mutes = [(float(r["t_start"]), float(r["t_end"])) for r in
              db.q("select * from redaction_plan where project_id=%s and kind in ('audio_mute','audio_bleep') and asset_id is null and t_end>t_start", (c.pid,))]
@@ -841,6 +847,29 @@ def stage_assemble(c: Ctx) -> None:
          (rk, project_key(c.pid, "captions.srt"), check["duration"], check["has_audio"], check.get("integrated_lufs"),
           db.jsonb({**check, "loudnorm_first_pass": stats}), c.rid))
     c.progress("assemble", 1.0, "export verified with ffprobe")
+
+
+def end_card_part(c: Ctx) -> tuple[Path, Path]:
+    from ..media import anim
+    from ..media.cards import THUMB_ACCENTS
+    from ..media.ff import run as ff
+    niche = _niche(c)
+    kit = db.q1("select selected from channel_kits where channel_id=%s order by version desc limit 1", (c.project["channel_id"],))
+    channel = (((kit or {}).get("selected") or {}).get("name") or "").strip() or "this channel"
+    ch = db.q1("select niche from channels where id=%s", (c.project["channel_id"],)) or {}
+    topic = {"architecture": "engineering marvels", "true_crime": "true stories", "geopolitics": "world affairs explained",
+             "motorsport": "racing stories", "science_space": "space and science", "business_tech": "business stories"
+             }.get(niche, (ch.get("niche") or "documentaries").lower()[:40])
+    photo = db.q1("""select storage_path from assets where project_id=%s and selected and kind='image' and tier='real'
+                     and storage_path is not null order by created_at limit 1""", (c.pid,))
+    bg = anim.Backdrop("photo" if photo else "aurora", THUMB_ACCENTS.get(niche, (255, 205, 40)), niche=niche,
+                       photo=c.local(photo["storage_path"]) if photo else None, seed=11)
+    out = c.work / "scenes" / "end-card.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    anim.end_card(out, channel, topic, anim.END_CARD_SECONDS, THUMB_ACCENTS.get(niche, (255, 205, 40)), bg)
+    silence = c.work / "end-silence.wav"
+    ff(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", f"{anim.END_CARD_SECONDS:.2f}", "-c:a", "pcm_s16le", str(silence)])
+    return out, silence
 
 
 def _footage_type(s: dict) -> str:

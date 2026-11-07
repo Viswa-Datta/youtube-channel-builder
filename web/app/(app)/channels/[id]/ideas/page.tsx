@@ -13,6 +13,10 @@ export default async function IdeasPage({ params, searchParams }: { params: Prom
   const { data: ch } = await sb.from("channels").select("*").eq("id", id).single();
   const { data: ideas } = await sb.from("ideas").select("*").eq("channel_id", id).neq("status", "dismissed");
   const { ctx, defaultTier } = await costContext();
+  // Keep showing progress after a refresh: the newest unfinished ideas job for this channel.
+  const { data: active } = await sb.from("jobs").select("id").eq("kind", "ideas").in("status", ["queued", "running"])
+    .eq("payload->>channel_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const watchJob = job ?? active?.id;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -24,7 +28,7 @@ export default async function IdeasPage({ params, searchParams }: { params: Prom
           defaultTier={defaultTier} ctx={ctx} endpoint="/api/jobs" payload={{ kind: "ideas", channel_id: id, count: 25 }}
           redirectTo={`/channels/${id}/ideas?job={job}`} />
       </div>
-      {job && <JobWatcher jobId={job} label="Ideas Agent" />}
+      {watchJob && <JobWatcher jobId={watchJob} label="Ideas Agent" />}
       <p className="text-xs text-muted-foreground">Rank = 0.40 × demand + 0.25 × (10 − competition) + 0.35 × footage feasibility. Cost is the estimated full-video cost at your default tier.</p>
       <IdeaBoard ideas={(ideas ?? []).map((i) => ({ ...i, rank_score: Number(i.rank_score), est_cost_usd: Number(i.est_cost_usd) }))}
         ctx={ctx} defaultTier={defaultTier} minutes={ch?.target_minutes ?? 12} />

@@ -151,16 +151,18 @@ def _loop(lane: str | None) -> None:
 
 
 def worker() -> None:
-    """Two lanes in one machine: 'voice' records narration (hours of CPU), 'main' does everything else, so research,
-    footage downloads and video assembly of other videos keep moving while a voice is being recorded."""
+    """Three lanes in one machine: 'voice' records narration, 'main' does the other render stages (footage, assembly),
+    'quick' does ideas, channel kits, production packs and publishing, so a quick job never waits behind a video."""
     import threading
     signal.signal(signal.SIGTERM, _sig)
     signal.signal(signal.SIGINT, _sig)
-    print(f"worker {settings.worker_id} polling {settings.database_url.split('@')[-1]} (lanes: main + voice)", flush=True)
-    t = threading.Thread(target=_loop, args=("voice",), daemon=True, name="voice-lane")
-    t.start()
+    print(f"worker {settings.worker_id} polling {settings.database_url.split('@')[-1]} (lanes: main + voice + quick)", flush=True)
+    lanes = [threading.Thread(target=_loop, args=(ln,), daemon=True, name=f"{ln}-lane") for ln in ("voice", "quick")]
+    for t in lanes:
+        t.start()
     _loop("main")
-    t.join(timeout=30)
+    for t in lanes:
+        t.join(timeout=30)
 
 
 def check_env() -> dict:

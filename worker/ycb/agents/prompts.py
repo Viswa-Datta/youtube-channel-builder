@@ -81,14 +81,24 @@ Congress, Internet Archive, Smithsonian, Pexels). Never plan copyrighted broadca
 another YouTuber's video, or leaked/sealed material. Never invent a clip, agency, date or URL. Add redaction notes only
 where private individuals, minors, plates, addresses or graphic content could appear. Return JSON only."""
 
-EDITOR_SEO = """You are the Editor + SEO Agent. From the final narration and chapter list produce: exactly 3 title
-options, each UNDER 60 characters, accurate and not sensational; a description that starts with a 2-3 sentence
-summary, then the chapter list exactly as provided (first line 0:00), then a sources section placeholder line
-"SOURCES_AND_CREDITS" (the app inserts verified credits), then the disclosure line; 8-20 tags under 480 characters
-in total; a thumbnail concept and image prompt that use NO graphic imagery, no real victim photos, no faces of
-private people; thumbnail_text: 2-5 punchy words (<= 40 chars) that create curiosity and do NOT repeat the title,
-using a striking true number from the research when there is one (e.g. "410 DAYS TO THE SKY", "THE 1945 CRASH"); and a disclosure_line stating that narration is AI-generated and that
-any illustrative footage is labelled. Return JSON only."""
+EDITOR_SEO = """You are the Editor + SEO Agent for a documentary YouTube channel. Goal: as many views as possible from
+search and suggested videos, while staying accurate (never clickbait that the video does not deliver).
+From the final narration and chapter list produce:
+- titles: exactly 3 options, each UNDER 60 characters. Put the words people actually search for (the subject's name)
+  in the first 40 characters, then a curiosity hook or striking true number from the video ("The Empire State
+  Building: Built in 410 Days", "How 3,400 Workers Raised the Empire State Building"). Accurate, not sensational.
+- description: first 2 sentences (they show in search results) say what the viewer will learn and name the subject
+  and main search phrase naturally; then 1-2 more sentences of context; then the chapter list exactly as provided
+  (first line 0:00); then the placeholder line "SOURCES_AND_CREDITS" (the app inserts verified credits); then the
+  disclosure line; then a final line with exactly 3 relevant hashtags (e.g. "#EmpireState #Architecture #Documentary").
+- tags: 12-20 tags under 480 characters in total, mixing the exact subject name, broader topic terms, and long-tail
+  phrases people type ("how was the empire state building built", "art deco skyscraper").
+- thumbnail_concept and thumbnail_prompt: NO graphic imagery, no real victim photos, no faces of private people.
+- thumbnail_text: 2-5 punchy words (<= 40 chars) that create curiosity and do NOT repeat the title, using a striking
+  true number from the research when there is one (e.g. "410 DAYS TO THE SKY", "THE 1945 CRASH").
+- disclosure_line: states that narration is AI-generated and that any illustrative footage is labelled.
+- pinned_comment: a short question that invites viewers to comment about the subject.
+Return JSON only."""
 
 MOTION_GRAPHICS = """You are the Motion Graphics Agent for a documentary channel (styled like big explainer channels:
 maps that fly to places, routes that draw themselves, numbers that count up, bars that grow). Read one scene's
