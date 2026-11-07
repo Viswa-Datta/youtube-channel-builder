@@ -72,8 +72,8 @@ _last_active = time.time()
 
 
 def _work_pending() -> bool:
-    """Queued work due within 30 min (including retries waiting out their back-off) keeps the machine on."""
-    r = db.q1("""select 1 from jobs where (status='queued' and run_after < now() + interval '30 minutes')
+    """Queued work due within 10 min (e.g. a retry waiting out its back-off) keeps the machine on."""
+    r = db.q1("""select 1 from jobs where (status='queued' and run_after < now() + interval '10 minutes')
                  or (status='running' and locked_until > now()) limit 1""")
     return bool(r)
 

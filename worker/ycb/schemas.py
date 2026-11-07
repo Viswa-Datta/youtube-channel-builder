@@ -254,6 +254,19 @@ class Shot(BaseModel):
     asset: str = Field(default="", description="id of the listed photo/clip that shows what this beat says, or ''")
     query: str = Field(default="", description="if no listed item fits: 2-5 word search for a photo/clip that would")
     label: str = Field(default="", description="optional on-screen label, max 6 words, only facts said in the beat")
+    generate: str = Field(default="", description="'image' or 'video' to make an AI scale-model illustration, else ''")
+    prompt: str = Field(default="", description="for generate: one sentence describing the miniature scene")
+
+    @field_validator("generate", mode="before")
+    @classmethod
+    def _g(cls, v):
+        v = (str(v or "")).strip().lower()
+        return v if v in ("image", "video") else ""
+
+    @field_validator("prompt", mode="before")
+    @classmethod
+    def _p(cls, v):
+        return "" if v is None else str(v)[:400]
 
     @field_validator("asset", "query", "label", mode="before")
     @classmethod

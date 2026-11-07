@@ -664,7 +664,7 @@ def make_beats(sentences: list[dict], min_len: float = 4.5, max_len: float = 11.
 
 
 def plan_shots(project: dict, scene: dict, beats: list[dict], items: list[dict], prov: str, model: str,
-               fx: str | None, user_id: str, render_id: str | None):
+               fx: str | None, user_id: str, render_id: str | None, gen_images: int = 0, gen_videos: int = 0):
     """items: [{'id': 'A1', 'kind': 'photo'|'clip', 'title': ...}]. Returns ShotPlan or None (fixture runs, failures)."""
     from ..schemas import ShotPlan
     if fx or not beats:
@@ -672,11 +672,14 @@ def plan_shots(project: dict, scene: dict, beats: list[dict], items: list[dict],
     listing = "\n".join(f"{it['id']} [{it['kind']}] {it['title'][:110]}" for it in items) or "(none yet)"
     beat_txt = "\n".join(f"{b['beat']}: ({b['end'] - b['start']:.0f}s) {b['text']}" for b in beats)
     user = (f"Video: {project['title']}\nScene {scene['idx']}: {scene['title']}\n\nBEATS:\n{beat_txt}\n\n"
-            f"AVAILABLE PHOTOS/CLIPS:\n{listing}\n\nReturn idx={scene['idx']} with {len(beats)} shots.")
+            f"AVAILABLE PHOTOS/CLIPS:\n{listing}\n\n"
+            + (f"GENERATION: allowed, at most {gen_images} image(s) and {gen_videos} video(s) in this scene.\n\n"
+               if gen_images or gen_videos else "GENERATION: not allowed (leave generate empty).\n\n")
+            + f"Return idx={scene['idx']} with {len(beats)} shots.")
     try:
         out, _ = complete_json(out=ShotPlan, agent="shot_list", provider=prov, model=model, system=prompts.SHOT_LIST,
                                user=user, user_id=user_id, project_id=project["id"], render_id=render_id,
-                               idem=f"project:{project['id']}:shots:{scene['idx']}:{_h(beat_txt + listing)}", stage="footage")
+                               idem=f"project:{project['id']}:shots:{scene['idx']}:{_h(beat_txt + listing)}:{gen_images}:{gen_videos}", stage="footage")
         return out
     except Exception:  # noqa: BLE001 - without a plan the editor falls back to rotating the scene's media
         return None

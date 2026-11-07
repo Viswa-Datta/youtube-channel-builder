@@ -318,7 +318,45 @@ def _insert_free_asset(c: Ctx, s: dict, e, q: str) -> str:
 SHOT_SEARCHES_PER_SCENE = 8
 
 
-def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_uses: dict) -> int:
+def _generate_asset(c: Ctx, s: dict, kind: str, prompt: str, gen: dict) -> dict | None:
+    """Make an AI scale-model illustration (image, or a short clip started from one) for a beat; None when
+    generation is unavailable (no paid tier) or the model declines. Stored like any other asset, labelled as AI."""
+    from ..providers import genmedia
+    if gen.get("off"):
+        return None
+    try:
+        h = sha(c.pid, s["idx"], kind, prompt)[:16]
+        img = genmedia.image(prompt, user_id=c.uid, project_id=c.pid, render_id=c.rid, idem=f"gen:{h}:img")
+        if kind == "video" and gen["videos"] > 0 and settings.gen_media == "mixed":
+            data = genmedia.video(prompt, settings.gen_video_seconds, user_id=c.uid, project_id=c.pid, render_id=c.rid,
+                                  idem=f"gen:{h}:vid", first_frame=img)
+            ext, mime, akind = "mp4", "video/mp4", "clip"
+            gen["videos"] -= 1
+        else:
+            data, ext, mime, akind = img, "png", "image/png", "image"
+        gen["images"] -= 1
+    except genmedia.GenUnavailable as e:
+        gen["off"] = True  # no paid tier / model not offered: stop trying for this video
+        c.progress("footage", 0.6, f"AI illustrations skipped: {str(e)[:120]}")
+        return None
+    except Exception:  # noqa: BLE001 - a declined or failed generation just leaves the beat to real media
+        return None
+    out = c.work / "gen" / f"{h}.{ext}"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    key = store().put(out, project_key(c.pid, "generated", f"{h}.{ext}"), mime)
+    row = db.q1("""insert into assets (project_id, scene_id, kind, tier, title, source_name, license, rights_notes,
+                   rights_checked, rights_checked_at, selected, storage_path, meta)
+                   values (%s,%s,%s,'generated',%s,'AI illustration (Google Gemini)','Licensed',%s,true,now(),true,%s,%s)
+                   returning id, kind, title""",
+                (c.pid, s["id"], akind, f"AI illustration: {prompt[:250]}",
+                 "Generated for this video with Google Gemini; labelled on screen as an illustration.", key,
+                 db.jsonb({"ai": True, "prompt": prompt, "auto_rights": True,
+                           **({"blurred_key": key} if akind == "clip" else {})})))
+    return row
+
+
+def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_uses: dict, gen: dict | None = None) -> int:
     """Sentence-level shot list: the Shot List Agent picks, for every beat of narration, the photo or clip that shows
     what is being said, searches for a better one when nothing fits, and adds a short factual label. Photos are used
     once per video, clips at most twice. Returns the number of beats that have a matching picture."""
@@ -337,7 +375,11 @@ def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_use
                    and tier in ('real','news_document','stock_broll') order by created_at""", (s["id"],))
     items = [{"id": f"A{i + 1}", "kind": "photo" if r["kind"] == "image" else "clip", "title": r["title"] or "", "row": r}
              for i, r in enumerate(rows) if not (r["kind"] == "image" and str(r["id"]) in used_photos)]
-    plan = agents.plan_shots(c.project, s, beats, items, c.prov, c.model, c.fx, c.uid, c.rid)
+    gen = gen if gen is not None else {"off": True, "images": 0, "videos": 0}
+    per_img = 0 if gen.get("off") else min(gen["images"], 3)
+    per_vid = 0 if gen.get("off") or settings.gen_media != "mixed" else min(gen["videos"], 1)
+    plan = agents.plan_shots(c.project, s, beats, items, c.prov, c.model, c.fx, c.uid, c.rid, per_img, per_vid)
+    made_img = made_vid = 0
     by_id = {it["id"]: it["row"] for it in items}
     case = _case(c)
     subj_words = discovery._words(case.get("case_name") or c.project["title"])
@@ -348,6 +390,12 @@ def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_use
         if row and ((row["kind"] == "image" and str(row["id"]) in used_photos) or
                     (row["kind"] == "clip" and clip_uses.get(str(row["id"]), 0) >= 2)):
             row = None
+        if row is None and sh and sh.generate and sh.prompt and not gen.get("off") and made_img < per_img + per_vid:
+            want = "video" if sh.generate == "video" and made_vid < per_vid else "image"
+            row = _generate_asset(c, s, want, sh.prompt, gen)
+            if row is not None:
+                made_img += 1
+                made_vid += row["kind"] == "clip"
         if row is None and sh and sh.query and searches < SHOT_SEARCHES_PER_SCENE:
             searches += 1
             q = sh.query
@@ -367,9 +415,13 @@ def plan_scene_shots(c: Ctx, s: dict, used_urls: set, used_photos: set, clip_use
                 used_photos.add(str(row["id"]))
             else:
                 clip_uses[str(row["id"])] = clip_uses.get(str(row["id"]), 0) + 1
+        is_ai = bool(row) and str(row.get("title") or "").startswith("AI illustration")
+        label = (sh.label if sh else "")[:40]
+        if is_ai:  # AI scenes are always marked as illustrations on screen
+            label = f"Illustration · {label}" if label else "AI illustration"
         shots.append({"start": round(b["start"], 2), "end": round(b["end"], 2),
                       "asset_id": str(row["id"]) if row else None, "kind": row["kind"] if row else None,
-                      "label": (sh.label if sh else "")[:48]})
+                      "label": label[:52], "ai": is_ai})
     db.x("update scenes set shots=%s, shots_hash=%s where id=%s", (db.jsonb(shots), s["narration_hash"], s["id"]))
     return sum(1 for x in shots if x["asset_id"])
 
@@ -454,8 +506,10 @@ def stage_footage_auto(c: Ctx) -> None:
     # Picture edit: match a picture to every sentence (searches more where nothing fits).
     used_photos: set = set()
     clip_uses: dict = {}
+    gen = {"off": settings.gen_media == "off" or c.fx is not None or not settings.gemini_api_key,
+           "images": settings.gen_images_max, "videos": settings.gen_videos_max}
     for k, s in enumerate(c.scenes()):
-        matched = plan_scene_shots(c, s, used, used_photos, clip_uses)
+        matched = plan_scene_shots(c, s, used, used_photos, clip_uses, gen)
         c.progress("footage", 0.6 + 0.4 * (k + 1) / len(scenes), f"scene {s['idx']}: {matched} shots matched to the narration")
     return None
 
@@ -771,9 +825,9 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         if a_out - a_in < 3:  # in/out points beyond the part that was downloaded: use the whole downloaded piece
             a_in, a_out = 0.0, src
         media[str(a["id"])] = {"kind": "clip", "path": p, "in": a_in, "out": max(a_in + 1.0, a_out), "pos": a_in,
-                               "cap": 12.0 if a["tier"] == "real" else 8.0, "uses": 0}
+                               "cap": 12.0 if a["tier"] == "real" else 8.0, "uses": 0, "ai": a["tier"] == "generated"}
     for i, (a, p) in enumerate(zip(photos, photo_paths)):
-        media[str(a["id"])] = {"kind": "photo", "path": p, "n": i, "uses": 0}
+        media[str(a["id"])] = {"kind": "photo", "path": p, "n": i, "uses": 0, "ai": a["tier"] == "generated"}
     shots = [x for x in (s.get("shots") or []) if s.get("shots_hash") == s["narration_hash"]]
     planned_ids = {x["asset_id"] for x in shots if x.get("asset_id")}
     pool = [m for k, m in media.items() if k not in planned_ids] or list(media.values())
@@ -797,6 +851,8 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
         return m
 
     def media_seg(m: dict, take: float, label: str) -> compose.Segment:
+        if m.get("ai") and "llustration" not in label:
+            label = "AI illustration"  # generated scenes are always marked on screen
         m["uses"] += 1
         uses[0] += 1
         if m["kind"] == "clip":
@@ -807,7 +863,7 @@ def scene_segments(c: Ctx, s: dict, n_scenes: int) -> tuple[list[compose.Segment
             m["pos"] += take
             return seg
         take = min(take, 9.0)
-        if not label and uses[0] % 6 == 4 and take >= 5:  # now and then: the photo as a framed print over a backdrop
+        if not label and not m.get("ai") and uses[0] % 6 == 4 and take >= 5:  # now and then: a framed print
             return anim_seg("framed", {"photo": str(m["path"]), "tilt": -3.0 if m["n"] % 2 else 2.5}, take)
         return compose.Segment("image", m["path"], take, pan=MOVES[(m["n"] + m["uses"]) % len(MOVES)], photo=True, label=label)
 
@@ -1043,6 +1099,8 @@ def credits(c: Ctx) -> str:
         if line not in seen:
             seen.add(line)
             out.append(line)
+    if db.q1("select 1 from assets where project_id=%s and selected and tier='generated' and (meta->>'ai')::boolean", (c.pid,)):
+        out.append("- AI illustrations (scale-model scenes, marked on screen): generated for this video with Google Gemini")
     out.append("- Maps, charts and animations: made for this video (satellite imagery NASA Blue Marble/GIBS and USGS, "
                "public domain; map data Natural Earth, public domain; geocoding © OpenStreetMap contributors, ODbL)")
     out += _voice_and_music(c)
@@ -1072,6 +1130,8 @@ def credits_short(c: Ctx, budget: int = 1600) -> str:
                    where s.project_id=%s and coalesce(s.excerpt, '') <> ''
                    order by k.n desc, s.ref limit 6""", (c.pid, c.pid))
     ordered = sorted(groups.items(), key=lambda kv: -kv[1]["n"])
+    ai_used = bool(db.q1("select 1 from assets where project_id=%s and selected and tier='generated' and (meta->>'ai')::boolean",
+                         (c.pid,)))
 
     def build(n_src: int, n_auth: int, n_groups: int) -> str:
         lines = ["Sources:"] + [f"- {x['title']}" + (f" ({x['publisher']})" if x["publisher"] else "") for x in srcs[:n_src]]
@@ -1084,6 +1144,8 @@ def credits_short(c: Ctx, budget: int = 1600) -> str:
             lines.append(line)
         if len(ordered) > n_groups:
             lines.append(f"- {sum(g['n'] for _, g in ordered[n_groups:])} more items from other free sources")
+        if ai_used:
+            lines.append("- AI illustrations (marked on screen) generated for this video with Google Gemini")
         lines.append("- Maps, charts and animations made for this video (NASA/USGS imagery and Natural Earth data, public domain)")
         lines += _voice_and_music(c)
         lines.append(f"Full credits for every clip and photo: {CREDITS_PAGE}{c.rid}")

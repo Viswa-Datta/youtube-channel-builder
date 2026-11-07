@@ -53,3 +53,22 @@ def test_beats_group_short_and_split_long_sentences():
     b = make_beats(s)
     assert [x["text"] for x in b] == ["A. B.", "Long C.", "Long C. (continued)", "D."]
     assert b[0]["start"] == 0 and b[-1]["end"] == 25 and all(x["end"] > x["start"] for x in b)
+
+
+def test_genmedia_finds_video_in_any_response_shape():
+    from ycb.providers.genmedia import _find_video
+    assert _find_video({"outputs": [{"type": "text", "text": "x"}, {"type": "video", "uri": "https://f/v.mp4"}]}) == ("uri", "https://f/v.mp4")
+    assert _find_video({"output": {"content": [{"mime_type": "video/mp4", "data": "AAA"}]}}) == ("data", "AAA")
+    assert _find_video({"status": "in_progress"}) is None
+
+
+def test_genmedia_billing_errors_switch_generation_off():
+    import requests
+    from ycb.providers.genmedia import GenUnavailable, _raise_for
+    r = requests.Response()
+    r.status_code, r._content = 429, b'{"error": {"message": "Free tier quota is 0 for this model. Enable billing."}}'
+    try:
+        _raise_for(r)
+        raise AssertionError("expected GenUnavailable")
+    except GenUnavailable:
+        pass

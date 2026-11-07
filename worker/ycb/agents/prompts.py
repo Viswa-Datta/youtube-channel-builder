@@ -128,5 +128,12 @@ narrator is saying at that moment, like a big documentary channel:
   (e.g. "Panama Canal locks construction 1913", "Zarya module launch"). Concrete nouns, no adjectives.
 - label: optional short on-screen label (max 6 words) naming what/where/when is shown, ONLY using facts stated in the
   beat (e.g. "Culebra Cut, 1913", "Zvezda Service Module"). Leave empty when the beat states no such fact.
-Return JSON only: {"idx": <scene idx>, "shots": [{"beat": n, "asset": "A3", "query": "", "label": ""}, ...]} with one
-entry per beat, in order."""
+- generate + prompt (only when GENERATION is allowed below): when a beat describes something archive photos cannot
+  show well (a construction stage, how a machine or process works, a moment before photography, a sense of scale) and
+  no listed item fits, set generate to "image" (or "video" for the most dynamic moments: something rising, moving,
+  filling, being assembled) and write prompt: ONE sentence describing a handcrafted miniature scale-model scene of
+  exactly what the beat states (e.g. "Scale model of the Empire State Building steel frame reaching the 80th floor,
+  tiny cranes on top, Manhattan streets below, 1930"). Only facts stated in the beat; no real people's faces; no text.
+  Prefer a real listed photo/clip whenever one shows the thing; generation is for what real media cannot show.
+Return JSON only: {"idx": <scene idx>, "shots": [{"beat": n, "asset": "A3", "query": "", "label": "", "generate": "",
+"prompt": ""}, ...]} with one entry per beat, in order."""

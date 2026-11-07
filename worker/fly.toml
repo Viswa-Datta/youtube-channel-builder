@@ -12,7 +12,7 @@ primary_region = "sjc"   # near the Supabase project (us-west-2)
   memory = "4gb"
 
 [env]
-  IDLE_EXIT_MINUTES = "10"  # turn the machine off after 10 idle minutes; the website wakes it for new work
+  IDLE_EXIT_MINUTES = "5"   # turn the machine off after 5 idle minutes; the website wakes it for new work
 
 # Exit code 0 (idle) leaves the machine stopped, so Fly bills nothing while idle; a crash restarts it.
 [[restart]]
