@@ -12,11 +12,10 @@ export const POST = handler(async (req: Request) => {
   const { sb, user } = await apiUser();
   const b = await body(req, Pick);
   const idea = await owned<{ id: string; channel_id: string; title: string }>(sb, "ideas", b.idea_id);
-  const { data: ch } = await sb.from("channels").select("target_minutes,format").eq("id", idea.channel_id).single();
-  const animated = ch?.format === "animated_shorts";
+  const { data: ch } = await sb.from("channels").select("target_minutes").eq("id", idea.channel_id).single();
   const { data: profile } = await sb.from("users").select("plan").eq("id", user.id).single();
   const plan = plansConfig.plans.find((p) => p.key === profile?.plan) ?? plansConfig.plans[0];
-  const minutes = animated ? 8 : b.target_minutes ?? ch?.target_minutes ?? 12; // each video can have its own length
+  const minutes = b.target_minutes ?? ch?.target_minutes ?? 12; // each video can have its own length
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
@@ -32,12 +31,6 @@ export const POST = handler(async (req: Request) => {
     .single();
   if (error) throw error;
   await sb.from("ideas").update({ status: "in_production" }).eq("id", idea.id);
-  if (animated) {
-    // The cost modal was accepted for the whole animated Short: research, script, scenes, voice and cut in one job.
-    const { job } = await enqueueJob({ userId: user.id, kind: "animated_short", payload: { version: 1 }, action: "animated_short",
-      tier: b.tier, minutes, projectId: data.id, idempotencyKey: `anim:${data.id}:1` });
-    return NextResponse.json({ id: data.id, job });
-  }
   // The cost modal was accepted for the production pack, so start it now.
   const { job } = await enqueueJob({ userId: user.id, kind: "production_pack", payload: {}, action: "production_pack",
     tier: b.tier, minutes, projectId: data.id, idempotencyKey: `pack:${data.id}` });

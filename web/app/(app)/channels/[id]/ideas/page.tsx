@@ -30,7 +30,7 @@ export default async function IdeasPage({ params, searchParams }: { params: Prom
       </div>
       {watchJob && <JobWatcher jobId={watchJob} label="Ideas Agent" />}
       <p className="text-xs text-muted-foreground">Rank = 0.40 × demand + 0.25 × (10 − competition) + 0.35 × footage feasibility. Cost is the estimated full-video cost at your default tier.</p>
-      <IdeaBoard animated={ch?.format === "animated_shorts"} ideas={(ideas ?? []).map((i) => ({ ...i, rank_score: Number(i.rank_score), est_cost_usd: Number(i.est_cost_usd) }))}
+      <IdeaBoard ideas={(ideas ?? []).map((i) => ({ ...i, rank_score: Number(i.rank_score), est_cost_usd: Number(i.est_cost_usd) }))}
         ctx={ctx} defaultTier={defaultTier} minutes={ch?.target_minutes ?? 12} />
     </div>
   );

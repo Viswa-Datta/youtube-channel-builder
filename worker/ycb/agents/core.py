@@ -60,8 +60,7 @@ def channel_kit(job: dict) -> dict:
     est = pricing.estimate("channel_kit", p.get("tier", "standard"))
     ledger.ensure_within_cap(job["user_id"], est["total_usd"], "Channel Agent")
     user = (f"Niche: {ch['niche']}\nSub-niche: {ch['sub_niche'] or '-'}\nAudience: {ch['audience'] or '-'}\n"
-            f"Language: {ch['language']}\nTone: {ch['tone'] or '-'}\nTarget length: "
-            f"{'45-60 second animated YouTube Shorts (3 a week), one recurring original 3D main character' if ch.get('format') == 'animated_shorts' else str(ch['target_minutes']) + ' minutes'}\n"
+            f"Language: {ch['language']}\nTone: {ch['tone'] or '-'}\nTarget length: {ch['target_minutes']} minutes\n"
             f"Faceless: {ch['faceless']}\nStyle references (style only): {', '.join(ch['competitor_urls']) or '-'}\n"
             f"Seed ideas from the user: {json.dumps(p.get('seed') or {})}")
     kit, _ = complete_json(out=ChannelKit, agent="channel", provider=prov, model=model, system=prompts.CHANNEL, user=user,
@@ -112,18 +111,13 @@ def ideas(job: dict) -> dict:
     pre = preset_for(ch["niche"], ch["sub_niche"])
     user = (f"Channel: {json.dumps((kit or {}).get('selected') or {})}\nNiche: {ch['niche']} / {ch['sub_niche'] or ''}\n"
             f"Subjects for this niche: {pre['subjects']}.\nGuidance: {pre['ideas']}\nSafety: {pre['safety']}\n"
-            f"Audience: {ch['audience'] or '-'}\nTarget length: "
-            f"{'one 45-60 second Short' if ch.get('format') == 'animated_shorts' else str(ch['target_minutes']) + ' min'}\n"
-            f"Count: {p.get('count', 25)}\n"
+            f"Audience: {ch['audience'] or '-'}\nTarget length: {ch['target_minutes']} min\nCount: {p.get('count', 25)}\n"
             f"Already covered (never suggest these subjects again): {json.dumps(existing[:400])}")
-    est = pricing.estimate("animated_short", tier)["total_usd"] if ch.get("format") == "animated_shorts" else \
-        pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
+    est = pricing.estimate("full", tier, minutes=ch["target_minutes"])["total_usd"]
     n_batch = db.q1("select coalesce(max(batch),0)+1 b from ideas where channel_id=%s", (ch["id"],))["b"]
     want = int(p.get("count", 25))
     from ..config import settings as _settings
     ai_scenes = _settings.gen_media != "off"
-    animated = ch.get("format") == "animated_shorts"
-    ideas_prompt = prompts.IDEAS_ANIMATED if animated else prompts.IDEAS
 
     def measure(cands: list) -> list:
         """Check subjects live (Wikipedia, real page views, free media) and replace guessed scores with measured ones."""
@@ -133,9 +127,7 @@ def ideas(job: dict) -> dict:
             pr = probes.get(k)
             if pr is not None:
                 feas = pr["feasibility"]
-                if animated and pr["verified"]:
-                    feas = max(feas, 8)  # every scene is generated: no archive footage needed
-                elif ai_scenes and pr["verified"]:
+                if ai_scenes and pr["verified"]:
                     feas = max(feas, 7)  # AI scale-model scenes + animations cover what archives lack
                 i.footage_feasibility_score = feas
                 if pr.get("demand") is not None:
@@ -145,7 +137,7 @@ def ideas(job: dict) -> dict:
 
     rows: list = []
     if fx:
-        batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=ideas_prompt, user=user,
+        batch, _ = complete_json(out=IdeaBatch, agent="ideas", provider=prov, model=model, system=prompts.IDEAS, user=user,
                                  user_id=job["user_id"], idem=f"job:{job['id']}:ideas", fixture=_fx(fx, "ideas"))
         rows = measure(batch.ideas)
     else:
@@ -167,7 +159,7 @@ def ideas(job: dict) -> dict:
                 ask += ("\nMany earlier suggestions were rejected for LOW PUBLIC INTEREST. Choose subjects that far more "
                         "people read about and search for.")
             half, _ = complete_json(out=IdeaPart, agent="ideas", provider=prov, model=model,
-                                    system=ideas_prompt.replace("Return 20-30 ideas.", f"Return {n} ideas."),
+                                    system=prompts.IDEAS.replace("Return 20-30 ideas.", f"Return {n} ideas."),
                                     user=ask, user_id=job["user_id"], idem=f"job:{job['id']}:ideas:{part}")
             fresh = []
             for i in half.ideas:

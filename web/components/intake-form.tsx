@@ -9,8 +9,7 @@ import type { Tier } from "@/lib/pricing-core";
 /** Niche intake -> channel row -> (cost modal) -> Channel Agent job. */
 export function IntakeForm({ ctx, defaultTier }: { ctx: CostContext; defaultTier: Tier }) {
   const router = useRouter();
-  const [f, setF] = useState({ format: "documentary", niche: "", sub_niche: "", audience: "", language: "en", tone: "", target_minutes: 12, faceless: true, competitor_urls: "" });
-  const animated = f.format === "animated_shorts";
+  const [f, setF] = useState({ niche: "", sub_niche: "", audience: "", language: "en", tone: "", target_minutes: 12, faceless: true, competitor_urls: "" });
   const [channelId, setChannelId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -41,18 +40,11 @@ export function IntakeForm({ ctx, defaultTier }: { ctx: CostContext; defaultTier
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="fmt">Channel type</Label>
-          <Select id="fmt" value={f.format} onChange={(e) => setF((x) => ({ ...x, format: e.target.value,
-            ...(e.target.value === "animated_shorts" ? { niche: x.niche || "Animated explainer Shorts", sub_niche: x.sub_niche || "Clever builds, what-if scenarios, how things work inside", tone: x.tone || "Upbeat, curious, fast storytelling", target_minutes: 8 } : {}) }))}>
-            <option value="documentary">Documentaries (long videos, real footage, plus Shorts)</option>
-            <option value="animated_shorts">Animated Shorts (45–60 s 3D animated stories with one main character)</option>
-          </Select>
-        </div>
         <div className="space-y-1.5"><Label htmlFor="niche">Niche</Label><Input id="niche" required value={f.niche} onChange={(e) => set("niche", e.target.value)} placeholder="True Crime Documentary" /></div>
         <div className="space-y-1.5"><Label htmlFor="sub">Sub-niche</Label><Input id="sub" value={f.sub_niche} onChange={(e) => set("sub_niche", e.target.value)} placeholder="Cold cases and investigations" /></div>
         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="aud">Audience</Label><Input id="aud" value={f.audience} onChange={(e) => set("audience", e.target.value)} placeholder="Adults who like long-form documentaries" /></div>
         <div className="space-y-1.5"><Label htmlFor="lang">Language</Label><Select id="lang" value={f.language} onChange={(e) => set("language", e.target.value)}><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option></Select></div>
-        {!animated && <div className="space-y-1.5"><Label htmlFor="len">Target length</Label><Select id="len" value={f.target_minutes} onChange={(e) => set("target_minutes", Number(e.target.value))}>{[8, 12, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}</Select></div>}
+        <div className="space-y-1.5"><Label htmlFor="len">Target length</Label><Select id="len" value={f.target_minutes} onChange={(e) => set("target_minutes", Number(e.target.value))}>{[8, 12, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}</Select></div>
         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="tone">Tone</Label><Input id="tone" value={f.tone} onChange={(e) => set("tone", e.target.value)} placeholder="Calm, serious, long-form documentary narration" /></div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.faceless} onChange={(e) => set("faceless", e.target.checked)} /> Faceless channel (no presenter on camera)</label>
         <div className="space-y-1.5 sm:col-span-2">

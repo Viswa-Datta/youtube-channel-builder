@@ -382,7 +382,7 @@ class ShortScript(BaseModel):
     @field_validator("title", mode="before")
     @classmethod
     def _title(cls, v):
-        return re.sub(r"\s+", " ", str(v or "").replace("#", " ")).strip()[:70]
+        return re.sub(r"#\w+", "", str(v or "")).strip()[:70]
 
     @field_validator("hook", mode="before")
     @classmethod
@@ -410,47 +410,3 @@ class ShortScript(BaseModel):
 
 class ShortsBatch(BaseModel):
     shorts: list[ShortScript]
-
-
-# ------------------------------------------------------------------ Animated Shorts
-class AnimLine(BaseModel):
-    text: str
-    scene: str
-    character: bool = True
-    camera: str = "medium"
-    animate: str = ""
-
-    @field_validator("text", "scene", "animate", mode="before")
-    @classmethod
-    def _clean(cls, v):
-        return re.sub(r"\s+", " ", str(v or "")).strip()[:500]
-
-
-class AnimatedShort(BaseModel):
-    title: str
-    hook: str = ""
-    lines: list[AnimLine]
-    description: str = ""
-    hashtags: list[str] = Field(default_factory=list)
-    cover_line: int = 0
-    cover_text: str = ""
-
-    _t = field_validator("title", mode="before")(ShortScript._title.__func__)
-    _h = field_validator("hook", mode="before")(ShortScript._hook.__func__)
-    _g = field_validator("hashtags", mode="before")(ShortScript._tags.__func__)
-
-    @field_validator("cover_text", mode="before")
-    @classmethod
-    def _cov(cls, v):
-        return str(v or "").strip()[:32]
-
-    @model_validator(mode="after")
-    def _len(self) -> "AnimatedShort":
-        self.lines = [x for x in self.lines if x.text][:20]
-        words = sum(len(x.text.split()) for x in self.lines)
-        if not 85 <= words <= 175:
-            raise ValueError(f"an animated Short needs 115-150 spoken words (got {words})")
-        if len(self.lines) < 8:
-            raise ValueError("an animated Short needs at least 8 storyboard lines")
-        self.cover_line = max(0, min(len(self.lines) - 1, int(self.cover_line)))
-        return self
