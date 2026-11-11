@@ -87,6 +87,26 @@ def estimate(action: str, tier: str, minutes: int = 12, scenes: int = 7, llm: st
         lines.append(Line("Render worker (vertical cut, mix)", "compute", c["label"], "seconds", int(hours * 3600),
                           round(hours * c["per_render_hour"], 6), c["paid"],
                           "" if not c["paid"] else P["compute"]["self_hosted"]["label"] + " — $0"))
+    if action == "animated_short":  # one ~50 s animated Short (research, script, scenes, key moments, voice, cut)
+        lines.append(_llm_line("Research Agent", llm, b["research"]["in"], b["research"]["out"]))
+        lines.append(_llm_line("Script & Storyboard Agent", llm, b["animated_short"]["in"], b["animated_short"]["out"]))
+        ai, av = P["ai_images"], P["ai_video"]
+        k = ai["per_animated_short"]
+        lines.append(Line("Scenes (AI 3D images, incl. main character)", "gemini", ai["label"], "requests", k,
+                          round(k * ai["per_image"], 6), True, ""))
+        secs = av["clips"] * av["seconds"]
+        lines.append(Line("Animated key moments", "gemini", av["label"], "seconds", secs,
+                          round(secs * av["per_second"], 6), True, "Stills with camera moves only — $0"))
+        chars = int(140 * P["chars_per_word"])
+        v = P["tts"][tts]
+        lines.append(Line("Voice Agent", tts.split(":")[0], v["label"], "characters", chars,
+                          round(chars / 1e6 * v["per_m_chars"], 6), v["paid"],
+                          "" if not v["paid"] else P["tts"][P["tiers"]["free"]["tts"]]["label"] + " — $0"))
+        c = P["compute"][compute]
+        hours = P["render_hours_per_video_minute"]
+        lines.append(Line("Render worker (vertical cut, mix)", "compute", c["label"], "seconds", int(hours * 3600),
+                          round(hours * c["per_render_hour"], 6), c["paid"],
+                          "" if not c["paid"] else P["compute"]["self_hosted"]["label"] + " — $0"))
     if action in ("whole_video", "full"):
         tin = scenes * b["script_expand_overhead_in_per_scene"]
         tout = int(words * tpw)

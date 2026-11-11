@@ -13,6 +13,7 @@ export type ShortView = {
   id: string; idx: number; status: string; error: string | null; title: string | null; hook: string | null;
   description: string; tags: string; mp4: string | null; srt: string | null; duration: number | null;
   slot: string | null; slotIsSaved: boolean; youtubeUrl: string | null; aiCount: number;
+  cover: string | null; coverDownload: string | null; kind: "from_video" | "animated";
 };
 
 function ShortCard({ s, tz, longTitle, longPosted, projectId, busyProject }: {
@@ -46,7 +47,7 @@ function ShortCard({ s, tz, longTitle, longPosted, projectId, busyProject }: {
         {s.status === "failed" && (
           <CardContent className="space-y-2 text-sm">
             <p className="text-destructive">{s.error?.split("\n")[0]}</p>
-            <Button size="sm" variant="outline" disabled={busy || busyProject} onClick={() => post(`/api/projects/${projectId}/shorts`, { idx: [s.idx] })}>
+            <Button size="sm" variant="outline" disabled={busy || busyProject} onClick={() => post(s.kind === "animated" ? `/api/projects/${projectId}/animated` : `/api/projects/${projectId}/shorts`, s.kind === "animated" ? {} : { idx: [s.idx] })}>
               <RefreshCw className="mr-1 h-3.5 w-3.5" />Try again</Button>
           </CardContent>
         )}
@@ -64,9 +65,16 @@ function ShortCard({ s, tz, longTitle, longPosted, projectId, busyProject }: {
       </CardHeader>
       <CardContent className="grid gap-5 md:grid-cols-[220px_1fr]">
         <div className="space-y-2">
-          {s.mp4 && <video src={s.mp4} controls playsInline preload="metadata" className="aspect-[9/16] w-full rounded-md bg-black" />}
+          {s.mp4 && <video src={s.mp4} poster={s.cover ?? undefined} controls playsInline preload="metadata" className="aspect-[9/16] w-full rounded-md bg-black" />}
+          {s.cover && (
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Cover (thumbnail)</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={s.cover} alt="Short cover" className="aspect-[9/16] w-24 rounded border object-cover" />
+            </div>
+          )}
           <Button size="sm" variant="ghost" className="w-full" disabled={busy || busyProject}
-            onClick={() => { if (confirm("Write a new script and make this Short again?")) post(`/api/projects/${projectId}/shorts`, { idx: [s.idx] }); }}>
+            onClick={() => { if (confirm("Write a new script and make this Short again?")) post(s.kind === "animated" ? `/api/projects/${projectId}/animated` : `/api/projects/${projectId}/shorts`, s.kind === "animated" ? {} : { idx: [s.idx] }); }}>
             <RefreshCw className="mr-1 h-3.5 w-3.5" />Make again</Button>
         </div>
         <div className="min-w-0 space-y-4 text-sm">
@@ -75,15 +83,21 @@ function ShortCard({ s, tz, longTitle, longPosted, projectId, busyProject }: {
             <div className="flex flex-wrap gap-2">
               {s.mp4 && <Button size="sm" variant="outline" asChild><a href={s.mp4}><Download className="mr-1 h-4 w-4" />Short (MP4)</a></Button>}
               {s.srt && <Button size="sm" variant="outline" asChild><a href={s.srt}><Download className="mr-1 h-4 w-4" />Captions (SRT)</a></Button>}
+              {s.coverDownload && <Button size="sm" variant="outline" asChild><a href={s.coverDownload}><Download className="mr-1 h-4 w-4" />Cover (JPG)</a></Button>}
             </div>
           </Step>
           <Step n={2} title="Upload in YouTube Studio">
             <p>Create → Upload videos → the MP4. YouTube makes it a Short automatically (vertical, under 3 minutes).</p>
             <CopyBox label={`Title (${(s.title ?? "").length}/100)`} text={s.title ?? ""} />
             <CopyBox label="Description" text={s.description} rows={6} />
-            <p><b>Audience:</b> not made for kids. <b>Altered content:</b> Yes (AI voice{s.aiCount ? " and AI illustrations" : ""}).</p>
-            <p><b>Related video</b> (Details page, below the description): choose <b>{longTitle}</b>, so a link to the full documentary shows on the Short.
-              {!longPosted && " Upload the documentary first so you can pick it."}</p>
+            <p><b>Thumbnail:</b> the cover is built into the very first frame. In the thumbnail options choose the first frame
+              (on the phone app: Edit thumbnail → drag to the start). If your Studio shows <b>Upload thumbnail</b> for Shorts
+              (Partner Program channels), upload the cover JPG instead.</p>
+            <p><b>Audience:</b> not made for kids. <b>Altered content:</b> Yes ({s.kind === "animated" ? "AI-animated scenes and AI voice" : `AI voice${s.aiCount ? " and AI illustrations" : ""}`}).</p>
+            {s.kind !== "animated" && (
+              <p><b>Related video</b> (Details page, below the description): choose <b>{longTitle}</b>, so a link to the full documentary shows on the Short.
+                {!longPosted && " Upload the documentary first so you can pick it."}</p>
+            )}
             <CopyBox label="Tags" text={s.tags} />
             <p><b>Subtitles:</b> Add → Upload file → With timing → the captions file.</p>
           </Step>
@@ -110,7 +124,7 @@ function ShortCard({ s, tz, longTitle, longPosted, projectId, busyProject }: {
 }
 
 export function ShortsPanel(props: {
-  projectId: string; tz: string; shorts: ShortView[]; longTitle: string; longPosted: boolean; busy: boolean;
+  projectId: string; tz: string; shorts: ShortView[]; longTitle: string; longPosted: boolean; busy: boolean; animated?: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -118,9 +132,11 @@ export function ShortsPanel(props: {
         <ShortCard key={s.id} s={s} tz={props.tz} longTitle={props.longTitle} longPosted={props.longPosted}
           projectId={props.projectId} busyProject={props.busy} />
       ))}
-      <p className="text-xs text-muted-foreground">
-        <ExternalLink className="mr-1 inline h-3 w-3" />Shorts are planned for the days without a long video, after this documentary comes out, so each one sends viewers to it.
-      </p>
+      {!props.animated && (
+        <p className="text-xs text-muted-foreground">
+          <ExternalLink className="mr-1 inline h-3 w-3" />Shorts are planned for the days without a long video, after this documentary comes out, so each one sends viewers to it.
+        </p>
+      )}
     </div>
   );
 }

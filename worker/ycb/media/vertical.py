@@ -20,6 +20,7 @@ class VShot:
     in_sec: float = 0.0
     move: int = 0          # picks the camera move
     label: str = ""        # small top label, e.g. "AI illustration"
+    punch: bool = False    # tight punch-in on the same picture (a second angle for fast cutting)
 
 
 def prepare_vstill(src: Path, out: Path) -> Path:
@@ -44,10 +45,16 @@ def prepare_vstill(src: Path, out: Path) -> Path:
     return out
 
 
-def _still_filter(w: int, d: float, move: int) -> str:
-    """Wide stills pan across (and push in a little); narrow ones push in or pull out. Always visibly moving."""
+def _still_filter(w: int, d: float, move: int, punch: bool = False) -> str:
+    """Wide stills pan across (and push in a little); narrow ones push in or pull out. Always visibly moving.
+    punch: a close crop (about 1.4x) that keeps creeping in - reads as a new camera angle on the same scene."""
     p = f"(t/{d:.3f})"
     e = f"(0.5-0.5*cos(PI*{p}))"
+    if punch:
+        z = f"(1.36+0.10*{e})"
+        x = ["(iw-ow)/2", "(iw-ow)*0.3", "(iw-ow)*0.7"][move % 3]
+        return (f"crop='ih*{VW}/{VH}':ih,scale=w='trunc({VW}*{z}/2)*2':h='trunc({VH}*{z}/2)*2':eval=frame:flags=bicubic,"
+                f"crop={VW}:{VH}:'{x}':'(ih-oh)*0.38'")
     if w >= VW * 1.45:
         z = f"(1+0.10*{e})"
         x = f"(iw-ow)*{e}" if move % 2 == 0 else f"(iw-ow)*(1-{e})"
@@ -144,7 +151,7 @@ def shot_video(shot: VShot, out: Path, work: Path) -> Path:
     if shot.kind == "photo":
         from PIL import Image
         w = Image.open(shot.path).width
-        vf = f"[0:v]{_still_filter(w, shot.duration, shot.move)},setsar=1,format=yuv420p[v]"
+        vf = f"[0:v]{_still_filter(w, shot.duration, shot.move, shot.punch)},setsar=1,format=yuv420p[v]"
         inp = ["-loop", "1", "-framerate", str(FPS), "-t", d, "-i", str(shot.path)]
     else:
         # clips: fill the vertical frame, off-centre crops alternate so a reused clip looks different
@@ -161,8 +168,10 @@ def shot_video(shot: VShot, out: Path, work: Path) -> Path:
     return out
 
 
-def finish(video: Path, audio: Path, hook: Path | None, end: Path | None, total: float, out: Path) -> Path:
-    """Overlay the hook (first 2.8 s, fades out) and the end prompt (last 3 s), add the audio."""
+def finish(video: Path, audio: Path, hook: Path | None, end: Path | None, total: float, out: Path,
+           cover: Path | None = None) -> Path:
+    """Overlay the hook (first 2.8 s, fades out) and the end prompt (last 3 s), add the audio. cover: the designed
+    thumbnail shown for the very first frames, so it can be picked as the Short's thumbnail in YouTube."""
     ins = ["-i", str(video), "-i", str(audio)]
     fc, last, n = "[0:v]null[v0]", "[v0]", 2
     if hook:
@@ -173,9 +182,45 @@ def finish(video: Path, audio: Path, hook: Path | None, end: Path | None, total:
         st = max(0.0, total - 3.0)
         ins += ["-loop", "1", "-framerate", str(FPS), "-t", f"{total:.3f}", "-i", str(end)]
         fc += f";[{n}:v]format=rgba,fade=t=in:st={st:.2f}:d=0.35:alpha=1[e];{last}[e]overlay=0:0:enable='gte(t,{st:.2f})'[v2]"
-        last = "[v2]"
+        last, n = "[v2]", n + 1
+    if cover:
+        ins += ["-loop", "1", "-framerate", str(FPS), "-t", "0.2", "-i", str(cover)]
+        fc += f";[{n}:v]scale={VW}:{VH},format=rgba[c];{last}[c]overlay=0:0:eof_action=pass:enable='lt(t,0.1)'[v3]"
+        last = "[v3]"
     tmp = out.with_suffix(".part.mp4")
     run([*ins, "-filter_complex", fc + f";{last}format=yuv420p[vo]", "-map", "[vo]", "-map", "1:a", *ENC,
          "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.3f}", "-movflags", "+faststart", str(tmp)])
     tmp.replace(out)
+    return out
+
+
+def cover_png(picture: Path, text: str, out: Path, accent=(255, 205, 40)) -> Path:
+    """The Short's thumbnail (1080x1920): its best picture, darkened at the top, with 2-4 huge words. Text sits in
+    the upper-middle so it stays visible when YouTube crops the cover for search and the channel page."""
+    from PIL import Image, ImageDraw, ImageEnhance, ImageOps
+    from .cards import _heavy
+    im = ImageOps.fit(Image.open(picture).convert("RGB"), (VW, VH), Image.LANCZOS, centering=(0.5, 0.45))
+    im = ImageEnhance.Color(ImageEnhance.Contrast(im).enhance(1.12)).enhance(1.18).convert("RGBA")
+    shade = Image.new("RGBA", (VW, VH), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shade)
+    for y in range(0, 1150):
+        a = int(170 * max(0.0, 1 - abs(y - 560) / 600))
+        sd.line([(0, y), (VW, y)], fill=(0, 0, 0, a))
+    im = Image.alpha_composite(im, shade)
+    d = ImageDraw.Draw(im)
+    words = (text or "").upper().strip()
+    size = 150
+    while True:
+        f = _heavy(size)
+        lines = _wrap(d, words, f, VW - 120)
+        if len(lines) <= 3 or size <= 80:
+            break
+        size -= 10
+    lh = int(size * 1.05)
+    y = 520 - lh * len(lines) // 2
+    for k, ln in enumerate(lines):
+        tw = d.textlength(ln, font=f)
+        col = accent + (255,) if k == len(lines) - 1 else (255, 255, 255, 255)
+        d.text(((VW - tw) / 2, y + k * lh), ln, font=f, fill=col, stroke_width=12, stroke_fill=(0, 0, 0, 255))
+    im.convert("RGB").save(out, quality=92)
     return out

@@ -12,6 +12,7 @@ const Intake = z.object({
   target_minutes: z.union([z.literal(8), z.literal(12), z.literal(20), z.literal(30), z.literal(45), z.literal(60)]),
   faceless: z.boolean().default(true),
   competitor_urls: z.array(z.string().url()).max(5).default([]),
+  format: z.enum(["documentary", "animated_shorts"]).default("documentary"),
 });
 
 export const POST = handler(async (req: Request) => {
@@ -21,7 +22,9 @@ export const POST = handler(async (req: Request) => {
   const plan = plansConfig.plans.find((p) => p.key === profile?.plan) ?? plansConfig.plans[0];
   const { count } = await sb.from("channels").select("id", { count: "exact", head: true });
   if ((count ?? 0) >= plan.channels) throw new HttpError(403, `Your ${plan.name} plan allows ${plan.channels} channel(s).`);
-  const { data, error } = await sb.from("channels").insert({ ...input, user_id: user.id }).select("id").single();
+  // Animated Shorts channels: one ~50 s Short per idea, 3 a week (Mon/Wed/Fri) by default.
+  const extra = input.format === "animated_shorts" ? { target_minutes: 8, publish_days: ["mon", "wed", "fri"] } : {};
+  const { data, error } = await sb.from("channels").insert({ ...input, ...extra, user_id: user.id }).select("id").single();
   if (error) throw error;
   return NextResponse.json({ id: data.id });
 });

@@ -1,6 +1,6 @@
 // Pure cost estimator. Mirrors worker/ycb/pricing.py line for line; tests/pricing.test.ts compares both.
 export type Tier = "free" | "standard" | "premium";
-export type Action = "channel_kit" | "channel_kit_item" | "ideas" | "production_pack" | "whole_video" | "full" | "shorts";
+export type Action = "channel_kit" | "channel_kit_item" | "ideas" | "production_pack" | "whole_video" | "full" | "shorts" | "animated_short";
 
 export interface Line {
   stage: string;
@@ -104,6 +104,32 @@ export function estimateWith(
       units: k, cost_usd: round(k * ai.per_image, 6), paid: true, free_alternative: "Real photos and clips only — $0" });
     const c = P.compute[compute];
     const hours = n * P.render_hours_per_video_minute;
+    lines.push({
+      stage: "Render worker (vertical cut, mix)", provider: "compute", plan: c.label, unit_type: "seconds", units: Math.trunc(hours * 3600),
+      cost_usd: round(hours * c.per_render_hour, 6), paid: c.paid,
+      free_alternative: c.paid ? `${P.compute.self_hosted.label} — $0` : "",
+    });
+  }
+  if (action === "animated_short") {
+    // one ~50 s animated Short (research, script, scenes, key moments, voice, cut)
+    lines.push(llmLine(P, "Research Agent", llm, b.research.in, b.research.out));
+    lines.push(llmLine(P, "Script & Storyboard Agent", llm, b.animated_short.in, b.animated_short.out));
+    const ai = P.ai_images, av = P.ai_video;
+    const k = ai.per_animated_short;
+    lines.push({ stage: "Scenes (AI 3D images, incl. main character)", provider: "gemini", plan: ai.label, unit_type: "requests",
+      units: k, cost_usd: round(k * ai.per_image, 6), paid: true, free_alternative: "" });
+    const secs = av.clips * av.seconds;
+    lines.push({ stage: "Animated key moments", provider: "gemini", plan: av.label, unit_type: "seconds", units: secs,
+      cost_usd: round(secs * av.per_second, 6), paid: true, free_alternative: "Stills with camera moves only — $0" });
+    const chars = Math.trunc(140 * P.chars_per_word);
+    const v = P.tts[tts];
+    lines.push({
+      stage: "Voice Agent", provider: tts.split(":")[0], plan: v.label, unit_type: "characters", units: chars,
+      cost_usd: round((chars / 1e6) * v.per_m_chars, 6), paid: v.paid,
+      free_alternative: v.paid ? `${P.tts[P.tiers.free.tts].label} — $0` : "",
+    });
+    const c = P.compute[compute];
+    const hours = P.render_hours_per_video_minute;
     lines.push({
       stage: "Render worker (vertical cut, mix)", provider: "compute", plan: c.label, unit_type: "seconds", units: Math.trunc(hours * 3600),
       cost_usd: round(hours * c.per_render_hour, 6), paid: c.paid,

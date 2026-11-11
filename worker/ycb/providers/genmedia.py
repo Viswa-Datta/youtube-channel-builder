@@ -25,6 +25,13 @@ STYLE = ("Highly detailed handcrafted miniature scale model diorama, tilt-shift 
          "no logos, no watermarks.")
 
 
+# Animated Shorts channels: a stylized 3D animated look (original characters only).
+ANIMATED_STYLE = ("Stylized 3D animated render, like a frame from a modern animated feature: clean shapes, soft global "
+                  "illumination, warm natural light, rich detail, cinematic composition. Interiors are shown as a clean "
+                  "architectural cut-away section when that explains the idea. No text, no captions, no letters, no "
+                  "logos, no watermarks, no real people.")
+
+
 class GenUnavailable(Exception):
     """Generation is not available (no key, no billing on the key, model not offered): skip it for this run."""
 
@@ -44,13 +51,22 @@ def _raise_for(r: requests.Response) -> None:
         r.raise_for_status()
 
 
-def image(prompt: str, *, user_id: str, project_id: str, render_id: str | None, idem: str) -> bytes:
-    """One 16:9 illustration (PNG/JPEG bytes)."""
+def image(prompt: str, *, user_id: str, project_id: str, render_id: str | None, idem: str, aspect: str = "16:9",
+          style: str = STYLE, refs: list[bytes] | None = None, ref_note: str = "") -> bytes:
+    """One illustration (PNG/JPEG bytes). refs: reference images (e.g. the channel's main character) to keep."""
     ledger.ensure_within_cap(user_id, IMAGE_USD, "an AI illustration")
     t0 = time.time()
+    parts: list[dict] = []
+    for ref in refs or []:
+        parts.append({"inlineData": {"mimeType": _mime(ref), "data": base64.b64encode(ref).decode()}})
+    text = f"{prompt}. {style}"
+    if refs:
+        text = (f"{ref_note or 'Keep the character from the reference image exactly the same: same face, hair, body, clothes and colours.'} "
+                f"New scene: {text}")
+    parts.append({"text": text})
     r = requests.post(f"{API}/models/{IMAGE_MODEL}:generateContent", headers=_headers(), timeout=(20, 180), json={
-        "contents": [{"parts": [{"text": f"{prompt}. {STYLE}"}]}],
-        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9"}},
+        "contents": [{"parts": parts}],
+        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": aspect}},
     })
     _raise_for(r)
     for cand in r.json().get("candidates", []):
@@ -63,6 +79,10 @@ def image(prompt: str, *, user_id: str, project_id: str, render_id: str | None, 
                               duration_ms=int((time.time() - t0) * 1000), meta={"prompt": prompt[:300]})
                 return base64.b64decode(data)
     raise RuntimeError("the image model returned no image (it may have declined the prompt)")
+
+
+def _mime(b: bytes) -> str:
+    return "image/png" if b[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
 
 
 def _find_video(obj):
@@ -86,20 +106,21 @@ def _find_video(obj):
 
 
 def video(prompt: str, seconds: int, *, user_id: str, project_id: str, render_id: str | None, idem: str,
-          first_frame: bytes | None = None, timeout_s: int = 600) -> bytes:
-    """A short 16:9 clip (MP4 bytes), optionally starting from an illustration we already made."""
+          first_frame: bytes | None = None, timeout_s: int = 600, aspect: str = "16:9", style: str = STYLE,
+          motion: str = "Slow, smooth camera movement.") -> bytes:
+    """A short clip (MP4 bytes), optionally starting from an illustration we already made."""
     seconds = max(3, min(15, int(seconds)))
     cost = VIDEO_USD_PER_S * seconds
     ledger.ensure_within_cap(user_id, cost, "an AI video clip")
     t0 = time.time()
-    text = f"{prompt}. {STYLE} Slow, smooth camera movement. No speech, no music."
+    text = f"{prompt}. {style} {motion} No speech, no music, no text."
     inp: object = text
     if first_frame:
         inp = [{"type": "text", "text": text + " Start from this image."},
-               {"type": "image", "data": base64.b64encode(first_frame).decode(), "mime_type": "image/png"}]
+               {"type": "image", "data": base64.b64encode(first_frame).decode(), "mime_type": _mime(first_frame)}]
     r = requests.post(f"{API}/interactions", headers=_headers(), timeout=(20, 600), json={
         "model": VIDEO_MODEL, "input": inp,
-        "response_format": {"type": "video", "duration": f"{seconds}s", "aspect_ratio": "16:9", "resolution": "720p"},
+        "response_format": {"type": "video", "duration": f"{seconds}s", "aspect_ratio": aspect, "resolution": "720p"},
     })
     _raise_for(r)
     body = r.json()

@@ -109,10 +109,11 @@ export function tagString(tags: string[] | null): string {
  * Slots for Shorts: the days WITHOUT a long video, same time of day, after the documentary's own release, one Short
  * per day, skipping days other Shorts of the channel already took.
  */
-export function shortSlots(plan: Plan, after: string | Date, taken: (string | Date)[], count: number): Date[] {
+export function shortSlots(plan: Plan, after: string | Date, taken: (string | Date)[], count: number, onPlanDays = false): Date[] {
   const longDays = plan.days.length ? plan.days : ["tue", "sat"];
   const free = DAYS.filter((d) => !longDays.includes(d));
-  const shortPlan: Plan = { ...plan, days: free.length ? [...free] : [...DAYS] };
+  // A Shorts-only channel posts on its own plan days; a documentary channel's Shorts go between its long videos.
+  const shortPlan: Plan = { ...plan, days: onPlanDays ? [...longDays] : free.length ? [...free] : [...DAYS] };
   const takenDays = new Set(taken.map((t) => { const d = localDate(new Date(t).getTime(), plan.tz); return `${d.y}-${d.m}-${d.d}`; }));
   const start = Math.max(Date.now(), new Date(after).getTime() + 3_600_000);
   const out: Date[] = [];

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
 import { UploadKit } from "@/components/upload-kit";
@@ -14,6 +15,10 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
   const { sb } = await requireUser();
   const { data: p } = await sb.from("projects").select("*").eq("id", id).single();
   const { data: render } = await sb.from("renders").select("*").eq("project_id", id).eq("status", "succeeded").order("version", { ascending: false }).limit(1).maybeSingle();
+  if (p && !render) {
+    const { data: c0 } = await sb.from("channels").select("format").eq("id", p.channel_id).single();
+    if (c0?.format === "animated_shorts") redirect(`/projects/${id}`); // a Short's upload kit lives on its project page
+  }
   if (!p || !render) return <p className="text-sm">Render the video first.</p>;
   const [{ data: checklist }, { data: ch }, { data: pub }, { data: kit }] = await Promise.all([
     sb.rpc("publish_checklist", { p_project: id, p_render: render.id }),
@@ -59,6 +64,9 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
       srt: r.srt_path ? await signedUrl(r.srt_path, 3600, `${fname}.srt`) : null,
       duration: r.duration_sec ? Number(r.duration_sec) : null, slot: s, slotIsSaved: !!r.planned_at,
       youtubeUrl: r.youtube_url, aiCount: ((r.lines ?? []) as { ai?: boolean }[]).filter((x) => x.ai).length,
+      cover: r.cover_path ? await signedUrl(r.cover_path, 3600) : null,
+      coverDownload: r.cover_path ? await signedUrl(r.cover_path, 3600, `${fname}-cover.jpg`) : null,
+      kind: r.kind ?? "from_video",
     };
   }));
   const { ctx, defaultTier } = await costContext(2, p.tier);

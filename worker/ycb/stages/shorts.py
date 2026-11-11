@@ -197,15 +197,21 @@ def build_short(c: Ctx, script, idx: int, media: list[dict], gen: dict) -> dict:
     accent = (255, 205, 40)
     hook = vertical.hook_png(script.hook or texts[0], work / "hook.png", accent)
     endp = vertical.end_png(work / "end.png", accent=accent)
-    out = vertical.finish(video, audio, hook, endp, total, work / f"short-{idx}.mp4")
+    first_photo = next((s.path for s in shots if s.kind == "photo"), None)
     thumb = work / "cover.jpg"
-    run(["-ss", "0.8", "-i", str(out), "-frames:v", "1", "-q:v", "3", str(thumb)])
+    if first_photo is not None:
+        vertical.cover_png(first_photo, script.hook or script.title, thumb, accent)
+    out = vertical.finish(video, audio, hook, endp, total, work / f"short-{idx}.mp4",
+                          cover=thumb if first_photo is not None else None)
+    if first_photo is None:
+        run(["-ss", "0.8", "-i", str(out), "-frames:v", "1", "-q:v", "3", str(thumb)])
     srt = work / f"short-{idx}.srt"
     srt.write_text(captions.build_srt(timings), encoding="utf-8")
     keys = {
         "mp4_path": store().put(out, project_key(c.pid, "shorts", f"short-{idx}.mp4"), "video/mp4"),
         "srt_path": store().put(srt, project_key(c.pid, "shorts", f"short-{idx}.srt"), "application/x-subrip"),
         "thumb_path": store().put(thumb, project_key(c.pid, "shorts", f"short-{idx}.jpg"), "image/jpeg"),
+        "cover_path": project_key(c.pid, "shorts", f"short-{idx}.jpg"),
     }
     any_ai = any(x["ai"] for x in lines_out)
     desc = script.description.strip()

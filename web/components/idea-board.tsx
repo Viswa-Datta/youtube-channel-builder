@@ -63,7 +63,7 @@ const COLS = [
 ] as const;
 
 /** Kanban: Suggested -> Shortlisted -> In Production -> Ready -> Published. Drag on desktop, arrow buttons on phones. */
-export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[]; ctx: CostContext; defaultTier: Tier; minutes: number }) {
+export function IdeaBoard({ ideas, ctx, defaultTier, minutes, animated = false }: { ideas: Idea[]; ctx: CostContext; defaultTier: Tier; minutes: number; animated?: boolean }) {
   const router = useRouter();
   const [items, setItems] = useState(ideas);
   // When the page refreshes with new ideas (e.g. after the Ideas Agent finishes), show them.
@@ -107,7 +107,8 @@ export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[];
                     <Badge variant="secondary">Rank {Number(i.rank_score).toFixed(1)}</Badge>
                     <Badge variant="outline">Demand {i.demand_score}</Badge>
                     <Badge variant="outline">Competition {i.competition_score}</Badge>
-                    <Badge variant={i.feasibility_score >= 7 ? "success" : i.feasibility_score >= 5 ? "warning" : "danger"}>Footage {i.feasibility_score}</Badge>
+                    {animated ? (i.pillar && <Badge variant="outline">{i.pillar}</Badge>) :
+                      <Badge variant={i.feasibility_score >= 7 ? "success" : i.feasibility_score >= 5 ? "warning" : "danger"}>Footage {i.feasibility_score}</Badge>}
                     <Badge variant="outline">≈{usd(i.est_cost_usd)}</Badge>
                   </div>
                   {manual(i.status) && (
@@ -126,8 +127,9 @@ export function IdeaBoard({ ideas, ctx, defaultTier, minutes }: { ideas: Idea[];
         ))}
       </div>
       {pick && (
-        <CostModal open={!!pick} onOpenChange={(o) => !o && setPick(null)} action="production_pack" minutes={minutes} title={`Production pack: ${pick.title}`}
-          defaultTier={defaultTier} ctx={ctx} chooseMinutes
+        <CostModal open={!!pick} onOpenChange={(o) => !o && setPick(null)} action={animated ? "animated_short" : "production_pack"} minutes={minutes}
+          title={animated ? `Animated Short: ${pick.title}` : `Production pack: ${pick.title}`}
+          defaultTier={defaultTier} ctx={ctx} chooseMinutes={!animated}
           onConfirm={async (tier, target_minutes) => {
             const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea_id: pick.id, tier, target_minutes }) });
             const j = await r.json();

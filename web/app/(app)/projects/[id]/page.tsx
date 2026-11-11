@@ -6,6 +6,7 @@ import { CancelRenderButton } from "@/components/cancel-render-button";
 import { LengthSelect } from "@/components/length-select";
 import { GenerateButton } from "@/components/generate-button";
 import { FoiaLog } from "@/components/foia-log";
+import { AnimatedView } from "./animated-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     sb.from("jobs").select("id,kind,status,render_id").eq("project_id", id).in("status", ["queued", "running", "paused_cap"]).order("created_at", { ascending: false }).limit(1),
   ]);
   if (!p) return <p>Not found</p>;
+  const { data: chan } = await sb.from("channels").select("*").eq("id", p.channel_id).single();
+  if (chan?.format === "animated_shorts") return <AnimatedView sb={sb} p={p} ch={chan} jobId={job ?? null} />;
   const pack = p.production_pack as null | { seo: { titles: string[]; description: string; tags: string[]; thumbnail_concept: string; thumbnail_prompt: string }; research: { disclaimers: string[]; fact_check_notes: string[]; gaps: string[]; summary: string }; chapters: { t: string; title: string }[]; footage: { foia_suggestions: string[] } };
   const { ctx, defaultTier } = await costContext(p.target_minutes, p.tier);
   const activeJob = job ?? jobs?.[0]?.id;
