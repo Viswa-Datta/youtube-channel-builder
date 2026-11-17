@@ -331,6 +331,8 @@ class SeoPack(BaseModel):
         for t in v:
             if len(t) >= 60:
                 raise ValueError(f"title must be under 60 characters: {t!r} ({len(t)})")
+            if re.search(r"\b(a|the) (history|story) of\b|\bexplained\b|\ban overview\b|\ba look at\b", t, re.I):
+                raise ValueError(f"title reads like an encyclopedia label; give a surprising fact, conflict or question: {t!r}")
         return v
 
     @field_validator("tags")

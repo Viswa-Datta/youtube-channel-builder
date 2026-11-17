@@ -59,6 +59,8 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
       srt: r.srt_path ? await signedUrl(r.srt_path, 3600, `${fname}.srt`) : null,
       duration: r.duration_sec ? Number(r.duration_sec) : null, slot: s, slotIsSaved: !!r.planned_at,
       youtubeUrl: r.youtube_url, aiCount: ((r.lines ?? []) as { ai?: boolean }[]).filter((x) => x.ai).length,
+      cover: r.cover_path ? await signedUrl(r.cover_path, 3600) : null,
+      coverDownload: r.cover_path ? await signedUrl(r.cover_path, 3600, `${fname}-cover.jpg`) : null,
     };
   }));
   const { ctx, defaultTier } = await costContext(2, p.tier);
